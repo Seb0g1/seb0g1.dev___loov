@@ -75,6 +75,9 @@ def _add_column_if_missing(engine: Engine, table: str, column_sql: str) -> None:
 
 
 def ensure_project_schema(engine: Engine) -> None:
+    if engine.dialect.name == "postgresql":
+        return
+
     _add_column_if_missing(engine, "products", "project_id INTEGER")
     _add_column_if_missing(engine, "draft_posts", "project_id INTEGER")
     _add_column_if_missing(engine, "published_posts", "project_id INTEGER")
