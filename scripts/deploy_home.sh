@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/Seb0g1/seb0g1.dev___loov.git"
 APP_DIR="/home/seb0g1.dev___loov"
+PROJECT_NAME="seb0g1loov"
 
 if [ ! -d "/home" ]; then
   echo "/home not found"
@@ -23,9 +24,9 @@ fi
 
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
-    docker compose up -d --build
+    docker compose -p "$PROJECT_NAME" up -d --build
   elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose up -d --build
+    docker-compose -p "$PROJECT_NAME" up -d --build
   else
     echo "Docker is installed but compose is missing."
     exit 1

@@ -54,7 +54,7 @@ npm run dev
 ## Docker / РїСЂРѕРґ
 
 ```bash
-docker compose up -d --build
+docker compose -p seb0g1loov up -d --build
 ```
 
 РџРѕСЃР»Рµ СЃС‚Р°СЂС‚Р° РїР°РЅРµР»СЊ РґРѕСЃС‚СѓРїРЅР° РЅР°:
@@ -128,13 +128,13 @@ nano .env
 Р—Р°РїСѓСЃРє Docker:
 
 ```bash
-docker compose up -d --build
+docker compose -p seb0g1loov up -d --build
 ```
 
 Р•СЃР»Рё Сѓ РІР°СЃ СЃС‚Р°СЂР°СЏ РІРµСЂСЃРёСЏ Docker Рё `docker compose` РЅРµ СЂР°Р±РѕС‚Р°РµС‚, РёСЃРїРѕР»СЊР·СѓР№С‚Рµ:
 
 ```bash
-docker-compose up -d --build
+docker-compose -p seb0g1loov up -d --build
 ```
 
 РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ РїРѕСЂС‚ `7070` РѕС‚РєСЂС‹С‚ РІ firewall.
@@ -175,13 +175,13 @@ nano .env
 5. Р—Р°РїСѓСЃС‚РёС‚Рµ:
 
 ```bash
-docker compose up -d --build
+docker compose -p seb0g1loov up -d --build
 ```
 
 Р•СЃР»Рё СЃРµСЂРІРµСЂ СЃС‚Р°СЂС‹Р№ Рё РєРѕРјР°РЅРґР° РЅРµ СЂР°Р±РѕС‚Р°РµС‚:
 
 ```bash
-docker-compose up -d --build
+docker-compose -p seb0g1loov up -d --build
 ```
 
 6. РћС‚РєСЂРѕР№С‚Рµ РїР°РЅРµР»СЊ:
@@ -193,6 +193,7 @@ docker-compose up -d --build
 ```bash
 cd /home/seb0g1.dev___loov
 git pull origin main
-docker compose up -d --build
+docker compose -p seb0g1loov up -d --build
 ```
+
 
