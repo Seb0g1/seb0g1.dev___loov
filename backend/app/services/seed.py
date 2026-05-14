@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
@@ -49,8 +49,8 @@ DEFAULT_SETTINGS = {
 DEFAULT_AD_PACKAGES = [
     {
         "code": "all_channels_24h",
-        "name": "Реклама во всех каналах 24 часа",
-        "description": "Публикация рекламы во всех проектах сети на 24 часа.",
+        "name": "Р РµРєР»Р°РјР° РІРѕ РІСЃРµС… РєР°РЅР°Р»Р°С… 24 С‡Р°СЃР°",
+        "description": "РџСѓР±Р»РёРєР°С†РёСЏ СЂРµРєР»Р°РјС‹ РІРѕ РІСЃРµС… РїСЂРѕРµРєС‚Р°С… СЃРµС‚Рё РЅР° 24 С‡Р°СЃР°.",
         "amount": 2500,
         "duration_hours": 24,
         "delete_after_hours": 24,
@@ -58,8 +58,8 @@ DEFAULT_AD_PACKAGES = [
     },
     {
         "code": "all_channels_48h",
-        "name": "Реклама во всех каналах 48 часов",
-        "description": "Публикация рекламы во всех проектах сети на 48 часов.",
+        "name": "Р РµРєР»Р°РјР° РІРѕ РІСЃРµС… РєР°РЅР°Р»Р°С… 48 С‡Р°СЃРѕРІ",
+        "description": "РџСѓР±Р»РёРєР°С†РёСЏ СЂРµРєР»Р°РјС‹ РІРѕ РІСЃРµС… РїСЂРѕРµРєС‚Р°С… СЃРµС‚Рё РЅР° 48 С‡Р°СЃРѕРІ.",
         "amount": 3900,
         "duration_hours": 48,
         "delete_after_hours": 48,
@@ -67,8 +67,8 @@ DEFAULT_AD_PACKAGES = [
     },
     {
         "code": "sticky_story",
-        "name": "История и закреп",
-        "description": "Реклама с усиленным размещением и закрепом в каналах.",
+        "name": "РСЃС‚РѕСЂРёСЏ Рё Р·Р°РєСЂРµРї",
+        "description": "Р РµРєР»Р°РјР° СЃ СѓСЃРёР»РµРЅРЅС‹Рј СЂР°Р·РјРµС‰РµРЅРёРµРј Рё Р·Р°РєСЂРµРїРѕРј РІ РєР°РЅР°Р»Р°С….",
         "amount": 4800,
         "duration_hours": 72,
         "delete_after_hours": 72,
@@ -80,58 +80,62 @@ DEFAULT_AD_PACKAGES = [
 DEFAULT_PROJECTS = [
     {
         "slug": "uyut-za-kopeiki",
-        "name": "Уют за копейки",
+        "name": "РЈСЋС‚ Р·Р° РєРѕРїРµР№РєРё",
         "telegram_channel_url": "https://t.me/yut_za_kopeiki",
         "telegram_channel_id": "@yut_za_kopeiki",
-        "niche": "Всё для дома: уют и декор",
-        "description": "Постельное белье, стильные лампы, органайзеры, посуда и эстетика Pinterest-дома.",
-        "tagline": "Уютно, красиво и недорого",
+        "niche": "Р’СЃС‘ РґР»СЏ РґРѕРјР°: СѓСЋС‚ Рё РґРµРєРѕСЂ",
+        "description": "РџРѕСЃС‚РµР»СЊРЅРѕРµ Р±РµР»СЊРµ, СЃС‚РёР»СЊРЅС‹Рµ Р»Р°РјРїС‹, РѕСЂРіР°РЅР°Р№Р·РµСЂС‹, РїРѕСЃСѓРґР° Рё СЌСЃС‚РµС‚РёРєР° Pinterest-РґРѕРјР°.",
+        "tagline": "РЈСЋС‚РЅРѕ, РєСЂР°СЃРёРІРѕ Рё РЅРµРґРѕСЂРѕРіРѕ",
         "accent_color": "#ffae42",
         "accent_secondary": "#4d7cff",
-        "logo_text": "УЗК",
+        "logo_text": "РЈР—Рљ",
         "category_focus_json": json.dumps(["bedding", "lamps", "organizers", "tableware"], ensure_ascii=False),
+        "feed_config_json": "",
         "sort_order": 1,
     },
     {
         "slug": "zheleznyi-vitamin",
-        "name": "Железный Витамин",
+        "name": "Р–РµР»РµР·РЅС‹Р№ Р’РёС‚Р°РјРёРЅ",
         "telegram_channel_url": "https://t.me/zheleznyi_vitamin",
         "telegram_channel_id": "@zheleznyi_vitamin",
-        "niche": "Спортпит и добавки",
-        "description": "Протеин, витамины, креатин, омега-3 и всё, что берут каждый месяц.",
-        "tagline": "Железо, витамины, энергия",
+        "niche": "РЎРїРѕСЂС‚РїРёС‚ Рё РґРѕР±Р°РІРєРё",
+        "description": "РџСЂРѕС‚РµРёРЅ, РІРёС‚Р°РјРёРЅС‹, РєСЂРµР°С‚РёРЅ, РѕРјРµРіР°-3 Рё РІСЃС‘, С‡С‚Рѕ Р±РµСЂСѓС‚ РєР°Р¶РґС‹Р№ РјРµСЃСЏС†.",
+        "tagline": "Р–РµР»РµР·Рѕ, РІРёС‚Р°РјРёРЅС‹, СЌРЅРµСЂРіРёСЏ",
         "accent_color": "#7dd3fc",
         "accent_secondary": "#22c55e",
-        "logo_text": "ЖВ",
+        "logo_text": "Р–Р’",
         "category_focus_json": json.dumps(["protein", "vitamins", "creatine", "omega-3"], ensure_ascii=False),
+        "feed_config_json": "",
         "sort_order": 2,
     },
     {
         "slug": "tochka-stilyev",
-        "name": "Точка стиля",
+        "name": "РўРѕС‡РєР° СЃС‚РёР»СЏ",
         "telegram_channel_url": "https://t.me/tochka_stilyev",
         "telegram_channel_id": "@tochka_stilyev",
-        "niche": "Кроссовки и брендовая одежда",
-        "description": "Оригинальные кроссовки, одежда и прикольные шмотки по интересным ценам.",
-        "tagline": "Стиль на каждый день",
+        "niche": "РљСЂРѕСЃСЃРѕРІРєРё Рё Р±СЂРµРЅРґРѕРІР°СЏ РѕРґРµР¶РґР°",
+        "description": "РћСЂРёРіРёРЅР°Р»СЊРЅС‹Рµ РєСЂРѕСЃСЃРѕРІРєРё, РѕРґРµР¶РґР° Рё РїСЂРёРєРѕР»СЊРЅС‹Рµ С€РјРѕС‚РєРё РїРѕ РёРЅС‚РµСЂРµСЃРЅС‹Рј С†РµРЅР°Рј.",
+        "tagline": "РЎС‚РёР»СЊ РЅР° РєР°Р¶РґС‹Р№ РґРµРЅСЊ",
         "accent_color": "#f472b6",
         "accent_secondary": "#60a5fa",
-        "logo_text": "ТС",
+        "logo_text": "РўРЎ",
         "category_focus_json": json.dumps(["sneakers", "apparel", "streetwear"], ensure_ascii=False),
+        "feed_config_json": "",
         "sort_order": 3,
     },
     {
         "slug": "techno-halava",
-        "name": "Техно Халява",
+        "name": "РўРµС…РЅРѕ РҐР°Р»СЏРІР°",
         "telegram_channel_url": "https://t.me/techno_halyava",
         "telegram_channel_id": "@techno_halyava",
-        "niche": "Компьютерные комплектующие и девайсы",
-        "description": "Техника, периферия, комплектующие и выгодные предложения для ПК.",
-        "tagline": "Техника без переплаты",
+        "niche": "РљРѕРјРїСЊСЋС‚РµСЂРЅС‹Рµ РєРѕРјРїР»РµРєС‚СѓСЋС‰РёРµ Рё РґРµРІР°Р№СЃС‹",
+        "description": "РўРµС…РЅРёРєР°, РїРµСЂРёС„РµСЂРёСЏ, РєРѕРјРїР»РµРєС‚СѓСЋС‰РёРµ Рё РІС‹РіРѕРґРЅС‹Рµ РїСЂРµРґР»РѕР¶РµРЅРёСЏ РґР»СЏ РџРљ.",
+        "tagline": "РўРµС…РЅРёРєР° Р±РµР· РїРµСЂРµРїР»Р°С‚С‹",
         "accent_color": "#ffb347",
         "accent_secondary": "#4d7cff",
-        "logo_text": "ТХ",
+        "logo_text": "РўРҐ",
         "category_focus_json": json.dumps(["laptops", "monitors", "keyboards", "mice", "components"], ensure_ascii=False),
+        "feed_config_json": "",
         "sort_order": 4,
     },
 ]
@@ -194,3 +198,4 @@ def seed_defaults(db: Session) -> None:
                 db.add(SyncStatus(project_id=project.id, source=source, state="idle", total_items=0))
 
     db.commit()
+

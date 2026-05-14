@@ -23,6 +23,7 @@ class Project(Base):
     accent_secondary: Mapped[str] = mapped_column(String(32), default="#4d7cff")
     logo_text: Mapped[str] = mapped_column(String(64))
     category_focus_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feed_config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

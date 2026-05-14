@@ -138,6 +138,7 @@ class ProjectRead(ORMModel):
     accent_secondary: str
     logo_text: str
     category_focus_json: str | None = None
+    feed_config_json: str | None = None
     is_active: bool
     sort_order: int
     created_at: datetime
@@ -155,6 +156,7 @@ class ProjectUpdate(BaseModel):
     accent_secondary: str | None = None
     logo_text: str | None = None
     category_focus_json: str | None = None
+    feed_config_json: str | None = None
     is_active: bool | None = None
     sort_order: int | None = None
 

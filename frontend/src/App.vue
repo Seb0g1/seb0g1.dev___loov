@@ -16,6 +16,7 @@ type Project = {
   accent_secondary: string
   logo_text: string
   category_focus_json?: string | null
+  feed_config_json?: string | null
   is_active: boolean
 }
 
@@ -140,7 +141,7 @@ const settings = ref<SettingRow[]>([])
 const referrals = ref<ReferralRow[]>([])
 const adPackages = ref<AdPackage[]>([])
 const adRequests = ref<AdRequest[]>([])
-const activeTab = ref<'dashboard' | 'products' | 'drafts' | 'ads' | 'logs' | 'settings'>('dashboard')
+const activeTab = ref<'dashboard' | 'products' | 'drafts' | 'feeds' | 'ads' | 'logs' | 'settings'>('dashboard')
 const notice = ref('')
 const selectedStyle = ref('short')
 const search = ref('')
@@ -196,6 +197,12 @@ const channelEditors = reactive<Record<number, {
   telegram_channel_id: string
   category_focus_json: string
   is_active: boolean
+}>>({})
+
+const feedEditors = reactive<Record<number, {
+  ozon_feed_url: string
+  wildberries_feed_url: string
+  yandex_market_feed_url: string
 }>>({})
 
 const productEditor = reactive({
@@ -328,6 +335,17 @@ function hydrateSettingsEditors() {
   settingsEditor.telethon_session_name = map.telethon_session_name || settingsEditor.telethon_session_name
 }
 
+function parseFeedConfig(raw?: string | null) {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
 function hydrateChannelEditors() {
   for (const project of projects.value) {
     channelEditors[project.id] = {
@@ -335,6 +353,17 @@ function hydrateChannelEditors() {
       telegram_channel_id: project.telegram_channel_id || '',
       category_focus_json: project.category_focus_json || '',
       is_active: project.is_active,
+    }
+  }
+}
+
+function hydrateFeedEditors() {
+  for (const project of projects.value) {
+    const config = parseFeedConfig(project.feed_config_json)
+    feedEditors[project.id] = {
+      ozon_feed_url: typeof config.ozon === 'string' ? config.ozon : '',
+      wildberries_feed_url: typeof config.wildberries === 'string' ? config.wildberries : '',
+      yandex_market_feed_url: typeof config.yandex_market === 'string' ? config.yandex_market : '',
     }
   }
 }
@@ -368,6 +397,7 @@ async function reloadAll() {
   adRequests.value = adReq
   hydrateSettingsEditors()
   hydrateChannelEditors()
+  hydrateFeedEditors()
   if (!adEditor.package_id && adPkg.length) {
     adEditor.package_id = adPkg[0].id
   }
@@ -599,6 +629,27 @@ async function saveChannels() {
   }
 }
 
+async function saveFeeds() {
+  loadingAction.value = true
+  try {
+    for (const project of projects.value) {
+      const editor = feedEditors[project.id]
+      if (!editor) continue
+      await api.updateProject(project.id, {
+        feed_config_json: JSON.stringify({
+          ozon: editor.ozon_feed_url.trim(),
+          wildberries: editor.wildberries_feed_url.trim(),
+          yandex_market: editor.yandex_market_feed_url.trim(),
+        }),
+      })
+    }
+    await reloadAll()
+    notice.value = 'Фиды проектов сохранены'
+  } finally {
+    loadingAction.value = false
+  }
+}
+
 async function runSettingsTest(kind: 'token' | 'admin' | 'channels' | 'payments') {
   loadingAction.value = true
   settingsTestResult.value = ''
@@ -643,6 +694,7 @@ onMounted(reloadAll)
         <button :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'"><BarChart3 />Дашборд</button>
         <button :class="{ active: activeTab === 'products' }" @click="activeTab = 'products'"><Boxes />Товары</button>
         <button :class="{ active: activeTab === 'drafts' }" @click="activeTab = 'drafts'"><FileText />Черновики</button>
+        <button :class="{ active: activeTab === 'feeds' }" @click="activeTab = 'feeds'"><Sparkles />Фиды</button>
         <button :class="{ active: activeTab === 'ads' }" @click="activeTab = 'ads'"><Megaphone />Реклама</button>
         <button :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'"><Bot />Логи</button>
         <button :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'"><Settings />Настройки</button>
@@ -935,6 +987,69 @@ onMounted(reloadAll)
               <span>{{ item.created_at }}</span>
               <p>{{ item.error || item.result || item.status }}</p>
             </article>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="activeTab === 'feeds'" class="split-layout">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Фиды проектов</h2>
+            <span>{{ projects.length }} проектов</span>
+          </div>
+          <div class="list">
+            <div v-for="project in projects" :key="project.id" class="settings-card">
+              <div class="settings-card-head">
+                <strong>{{ project.name }}</strong>
+                <span>{{ project.slug }}</span>
+              </div>
+              <div class="form-grid compact-grid">
+                <label><span>Ozon feed / category URL</span><input v-model="feedEditors[project.id].ozon_feed_url" placeholder="https://www.ozon.ru/category/..." /></label>
+                <label><span>Wildberries feed URL</span><input v-model="feedEditors[project.id].wildberries_feed_url" placeholder="https://www.wildberries.ru/catalog/..." /></label>
+                <label><span>Yandex Market feed URL</span><input v-model="feedEditors[project.id].yandex_market_feed_url" placeholder="https://market.yandex.ru/catalog/..." /></label>
+              </div>
+              <p class="help-text">Можно вставлять готовый фид, ссылку на категорию или подкатегорию. Если здесь пусто, система возьмёт глобальный фид из настроек.</p>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <button class="primary" :disabled="loadingAction" @click="saveFeeds">Сохранить фиды</button>
+            <button class="ghost" :disabled="loadingAction" @click="reloadAll">Обновить из базы</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Как это работает</h2>
+            <span>Приоритет по проекту</span>
+          </div>
+          <div class="status-stack">
+            <div class="status-item">
+              <span>1</span>
+              <strong>Проектный feed URL</strong>
+            </div>
+            <div class="status-item">
+              <span>2</span>
+              <strong>Глобальный fallback из настроек</strong>
+            </div>
+            <div class="status-item">
+              <span>3</span>
+              <strong>Demo mode только если фиды пустые</strong>
+            </div>
+          </div>
+          <div class="parser-state" :class="{ 'parser-state-warn': !parserState.configured }">
+            <div>
+              <span>Глобальные фиды</span>
+              <strong>{{ parserState.configured ? 'Указаны' : 'Пусто' }}</strong>
+            </div>
+            <div>
+              <span>Demo mode</span>
+              <strong>{{ parserState.demo ? 'включён' : 'выключен' }}</strong>
+            </div>
+            <p>
+              {{ parserState.configured
+                ? 'Если у проекта не задан свой feed URL, импорт возьмёт глобальные адреса из настроек.'
+                : 'Глобальные фиды пустые. Используй отдельную страницу фидов или внеси базовые адреса в настройки.' }}
+            </p>
           </div>
         </div>
       </section>

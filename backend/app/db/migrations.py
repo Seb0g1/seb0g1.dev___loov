@@ -75,9 +75,7 @@ def _add_column_if_missing(engine: Engine, table: str, column_sql: str) -> None:
 
 
 def ensure_project_schema(engine: Engine) -> None:
-    if engine.dialect.name == "postgresql":
-        return
-
+    _add_column_if_missing(engine, "projects", "feed_config_json TEXT")
     _add_column_if_missing(engine, "products", "project_id INTEGER")
     _add_column_if_missing(engine, "draft_posts", "project_id INTEGER")
     _add_column_if_missing(engine, "published_posts", "project_id INTEGER")
@@ -87,29 +85,32 @@ def ensure_project_schema(engine: Engine) -> None:
     _add_column_if_missing(engine, "publish_logs", "project_id INTEGER")
     _add_column_if_missing(engine, "sync_status", "project_id INTEGER")
     _add_column_if_missing(engine, "manual_exceptions", "project_id INTEGER")
+    if engine.dialect.name == "postgresql":
+        return
 
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
-                CREATE TABLE IF NOT EXISTS projects (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    slug VARCHAR(64) UNIQUE NOT NULL,
-                    name VARCHAR(128) NOT NULL,
-                    telegram_channel_url TEXT,
-                    telegram_channel_id VARCHAR(128),
-                    niche VARCHAR(256) NOT NULL,
-                    description TEXT,
-                    tagline VARCHAR(256),
-                    accent_color VARCHAR(32) NOT NULL DEFAULT '#ffae42',
-                    accent_secondary VARCHAR(32) NOT NULL DEFAULT '#4d7cff',
-                    logo_text VARCHAR(64) NOT NULL,
-                    category_focus_json TEXT,
-                    is_active BOOLEAN NOT NULL DEFAULT 1,
-                    sort_order INTEGER NOT NULL DEFAULT 0,
-                    created_at DATETIME,
-                    updated_at DATETIME
-                )
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug VARCHAR(64) UNIQUE NOT NULL,
+            name VARCHAR(128) NOT NULL,
+            telegram_channel_url TEXT,
+            telegram_channel_id VARCHAR(128),
+            niche VARCHAR(256) NOT NULL,
+            description TEXT,
+            tagline VARCHAR(256),
+            accent_color VARCHAR(32) NOT NULL DEFAULT '#ffae42',
+            accent_secondary VARCHAR(32) NOT NULL DEFAULT '#4d7cff',
+            logo_text VARCHAR(64) NOT NULL,
+            category_focus_json TEXT,
+            feed_config_json TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME,
+            updated_at DATETIME
+        )
                 """
             )
         )
