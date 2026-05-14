@@ -7,13 +7,13 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
-from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.entities import AdRequest, DraftPost, Product, Project, ScheduleItem
 from app.services.advertising import delete_expired_ad_posts
 from app.services.drafts import create_draft_from_product, pick_next_product_for_project
 from app.services.importer import import_products
 from app.services.publishing import publish_draft
+from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ async def run_import_job() -> None:
 
 
 async def run_publish_job() -> None:
-    settings = get_settings()
+    settings = load_runtime_config()
     if not settings.auto_posting_enabled:
         return
     db = SessionLocal()
@@ -81,7 +81,7 @@ async def run_ad_cleanup_job() -> None:
 
 
 def start_scheduler() -> None:
-    settings = get_settings()
+    settings = load_runtime_config()
     if scheduler.running:
         return
     scheduler.add_job(run_import_job, "interval", minutes=max(settings.import_interval_minutes, 5), id="import_products", replace_existing=True)
@@ -93,3 +93,10 @@ def start_scheduler() -> None:
 def stop_scheduler() -> None:
     if scheduler.running:
         scheduler.shutdown(wait=False)
+
+
+def restart_scheduler() -> None:
+    if scheduler.running:
+        scheduler.remove_all_jobs()
+        scheduler.shutdown(wait=False)
+    start_scheduler()

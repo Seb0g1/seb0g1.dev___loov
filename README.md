@@ -54,7 +54,7 @@ npm run dev
 ## Docker / РїСЂРѕРґ
 
 ```bash
-docker compose -p seb0g1loov up -d --build
+COMPOSE_PROJECT_NAME=seb0g1loov docker compose up -d --build
 ```
 
 РџРѕСЃР»Рµ СЃС‚Р°СЂС‚Р° РїР°РЅРµР»СЊ РґРѕСЃС‚СѓРїРЅР° РЅР°:
@@ -128,13 +128,13 @@ nano .env
 Р—Р°РїСѓСЃРє Docker:
 
 ```bash
-docker compose -p seb0g1loov up -d --build
+COMPOSE_PROJECT_NAME=seb0g1loov docker compose up -d --build
 ```
 
 Р•СЃР»Рё Сѓ РІР°СЃ СЃС‚Р°СЂР°СЏ РІРµСЂСЃРёСЏ Docker Рё `docker compose` РЅРµ СЂР°Р±РѕС‚Р°РµС‚, РёСЃРїРѕР»СЊР·СѓР№С‚Рµ:
 
 ```bash
-docker-compose -p seb0g1loov up -d --build
+COMPOSE_PROJECT_NAME=seb0g1loov docker-compose up -d --build
 ```
 
 РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ РїРѕСЂС‚ `7070` РѕС‚РєСЂС‹С‚ РІ firewall.
@@ -175,13 +175,13 @@ nano .env
 5. Р—Р°РїСѓСЃС‚РёС‚Рµ:
 
 ```bash
-docker compose -p seb0g1loov up -d --build
+COMPOSE_PROJECT_NAME=seb0g1loov docker compose up -d --build
 ```
 
 Р•СЃР»Рё СЃРµСЂРІРµСЂ СЃС‚Р°СЂС‹Р№ Рё РєРѕРјР°РЅРґР° РЅРµ СЂР°Р±РѕС‚Р°РµС‚:
 
 ```bash
-docker-compose -p seb0g1loov up -d --build
+COMPOSE_PROJECT_NAME=seb0g1loov docker-compose up -d --build
 ```
 
 6. РћС‚РєСЂРѕР№С‚Рµ РїР°РЅРµР»СЊ:
@@ -193,7 +193,24 @@ docker-compose -p seb0g1loov up -d --build
 ```bash
 cd /home/seb0g1.dev___loov
 git pull origin main
-docker compose -p seb0g1loov up -d --build
+COMPOSE_PROJECT_NAME=seb0g1loov docker compose up -d --build
 ```
 
+
+
+
+## Панель настроек
+
+Рабочие параметры AI, ботов, фидов, автопостинга и интервалов теперь можно менять прямо в админке. В .env остаются только стартовые вещи: база, CORS и базовые параметры запуска.
+
+
+## Быстрый старт на сервере
+
+Если репозиторий уже лежит в /home, можно просто запустить:
+
+```bash
+bash scripts/deploy_home.sh
+```
+
+Скрипт сам проверит Docker, поднимет базу, дождётся готовности PostgreSQL и запустит backend + frontend.
 

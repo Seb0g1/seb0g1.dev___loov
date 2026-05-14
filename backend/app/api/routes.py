@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
@@ -56,6 +56,7 @@ from app.services.runtime_config import SECRET_KEYS, load_runtime_config, public
 from app.services.scoring import score_product
 from app.services.telegram import TelegramPublisher, verify_message_exists
 from app.services.seed import seed_defaults
+from app.workers.scheduler import restart_scheduler
 
 
 router = APIRouter()
@@ -353,7 +354,7 @@ def get_settings(db: Session = Depends(get_db)):
 @router.put("/settings")
 def update_settings(payload: SettingsPatch, db: Session = Depends(get_db)):
     for key, value in payload.values.items():
-        if key in SECRET_KEYS and ("••••" in value or value.strip() == ""):
+        if key in SECRET_KEYS and value.strip() == "":
             continue
         item = db.get(AppSetting, key)
         if not item:
@@ -362,6 +363,7 @@ def update_settings(payload: SettingsPatch, db: Session = Depends(get_db)):
         else:
             item.value = value
     db.commit()
+    restart_scheduler()
     return {"ok": True}
 
 
@@ -395,7 +397,7 @@ async def test_telegram_admin(db: Session = Depends(get_db)):
     publisher = TelegramPublisher()
     result = await publisher.send_message(
         chat_id=str(runtime.telegram_admin_id),
-        text="Тест бота: админ-панель подключена, уведомления работают.",
+        text="РўРµСЃС‚ Р±РѕС‚Р°: Р°РґРјРёРЅ-РїР°РЅРµР»СЊ РїРѕРґРєР»СЋС‡РµРЅР°, СѓРІРµРґРѕРјР»РµРЅРёСЏ СЂР°Р±РѕС‚Р°СЋС‚.",
     )
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error or "Admin test failed")
@@ -413,7 +415,7 @@ async def test_telegram_channels(db: Session = Depends(get_db)):
             continue
         result = await publisher.send_message(
             chat_id=project.telegram_channel_id,
-            text=f"Тест бота: канал «{project.name}» подключен.",
+            text=f"РўРµСЃС‚ Р±РѕС‚Р°: РєР°РЅР°Р» В«{project.name}В» РїРѕРґРєР»СЋС‡РµРЅ.",
         )
         results.append(
             {
@@ -540,7 +542,7 @@ async def _set_ad_paid(db: Session, request: AdRequest) -> AdRequest:
     db.commit()
     db.refresh(request)
     publisher = TelegramPublisher()
-    await publisher.send_message(chat_id=request.chat_id, text="Оплата получена. Пост в работе.")
+    await publisher.send_message(chat_id=request.chat_id, text="РћРїР»Р°С‚Р° РїРѕР»СѓС‡РµРЅР°. РџРѕСЃС‚ РІ СЂР°Р±РѕС‚Рµ.")
     return request
 
 
@@ -705,3 +707,4 @@ async def import_and_create_drafts(style: str = "short", project_id: int | None 
         await create_draft_from_product(db, product, style=style)
         drafted += 1
     return {"imported": import_result, "drafted": drafted}
+

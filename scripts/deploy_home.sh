@@ -1,9 +1,20 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 REPO_URL="https://github.com/Seb0g1/seb0g1.dev___loov.git"
 APP_DIR="/home/seb0g1.dev___loov"
 PROJECT_NAME="seb0g1loov"
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker-compose "$@"
+  else
+    echo "Docker compose is not available."
+    exit 1
+  fi
+}
 
 if [ ! -d "/home" ]; then
   echo "/home not found"
@@ -23,15 +34,13 @@ if [ ! -f ".env" ] && [ -f ".env.example" ]; then
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  if docker compose version >/dev/null 2>&1; then
-    docker compose -p "$PROJECT_NAME" up -d --build
-  elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose -p "$PROJECT_NAME" up -d --build
-  else
-    echo "Docker is installed but compose is missing."
-    exit 1
-  fi
+  compose up -d db
+  until compose exec -T db pg_isready -U tehno -d tehno_halava >/dev/null 2>&1; do
+    sleep 2
+  done
+  compose up -d --build backend frontend
 else
   echo "Docker is not installed."
   exit 1
 fi
+

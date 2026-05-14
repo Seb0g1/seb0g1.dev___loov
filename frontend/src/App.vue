@@ -164,6 +164,31 @@ const settingsEditor = reactive({
   yookassa_return_url: 'http://localhost:5173',
   cryptobot_api_token: '',
   cryptobot_asset: 'USDT',
+  text_engine: 'openrouter',
+  openrouter_api_key: '',
+  openrouter_base_url: 'https://openrouter.ai/api/v1',
+  openrouter_text_model: 'openrouter/cypher-alpha:free',
+  openrouter_text_timeout_seconds: 180,
+  openrouter_text_max_tokens: 900,
+  openrouter_site_url: 'https://ai.sebog1.ru',
+  openrouter_site_name: 'Aromat Day',
+  image_engine: 'codex_sale',
+  codex_sale_api_key: '',
+  codex_sale_base_url: 'https://codex.sale/v1',
+  codex_sale_image_model: 'gpt-image-2',
+  codex_sale_image_size: '1024x1024',
+  codex_sale_timeout_seconds: 300,
+  image_generation_mode: 'image_to_image',
+  ozon_feed_url: '',
+  wildberries_feed_url: '',
+  yandex_market_feed_url: '',
+  marketplace_demo_mode: 'false',
+  auto_posting_enabled: 'false',
+  import_interval_minutes: 30,
+  publish_interval_minutes: 5,
+  telethon_api_id: 0,
+  telethon_api_hash: '',
+  telethon_session_name: 'tehno_halava_verifier',
 })
 const channelEditors = reactive<Record<number, {
   telegram_channel_url: string
@@ -274,6 +299,31 @@ function hydrateSettingsEditors() {
   settingsEditor.yookassa_return_url = map.yookassa_return_url || settingsEditor.yookassa_return_url
   settingsEditor.cryptobot_api_token = map.cryptobot_api_token || settingsEditor.cryptobot_api_token
   settingsEditor.cryptobot_asset = map.cryptobot_asset || settingsEditor.cryptobot_asset
+  settingsEditor.text_engine = map.text_engine || settingsEditor.text_engine
+  settingsEditor.openrouter_api_key = map.openrouter_api_key || settingsEditor.openrouter_api_key
+  settingsEditor.openrouter_base_url = map.openrouter_base_url || settingsEditor.openrouter_base_url
+  settingsEditor.openrouter_text_model = map.openrouter_text_model || settingsEditor.openrouter_text_model
+  settingsEditor.openrouter_text_timeout_seconds = Number(map.openrouter_text_timeout_seconds || settingsEditor.openrouter_text_timeout_seconds)
+  settingsEditor.openrouter_text_max_tokens = Number(map.openrouter_text_max_tokens || settingsEditor.openrouter_text_max_tokens)
+  settingsEditor.openrouter_site_url = map.openrouter_site_url || settingsEditor.openrouter_site_url
+  settingsEditor.openrouter_site_name = map.openrouter_site_name || settingsEditor.openrouter_site_name
+  settingsEditor.image_engine = map.image_engine || settingsEditor.image_engine
+  settingsEditor.codex_sale_api_key = map.codex_sale_api_key || settingsEditor.codex_sale_api_key
+  settingsEditor.codex_sale_base_url = map.codex_sale_base_url || settingsEditor.codex_sale_base_url
+  settingsEditor.codex_sale_image_model = map.codex_sale_image_model || settingsEditor.codex_sale_image_model
+  settingsEditor.codex_sale_image_size = map.codex_sale_image_size || settingsEditor.codex_sale_image_size
+  settingsEditor.codex_sale_timeout_seconds = Number(map.codex_sale_timeout_seconds || settingsEditor.codex_sale_timeout_seconds)
+  settingsEditor.image_generation_mode = map.image_generation_mode || settingsEditor.image_generation_mode
+  settingsEditor.ozon_feed_url = map.ozon_feed_url || ''
+  settingsEditor.wildberries_feed_url = map.wildberries_feed_url || ''
+  settingsEditor.yandex_market_feed_url = map.yandex_market_feed_url || ''
+  settingsEditor.marketplace_demo_mode = map.marketplace_demo_mode || settingsEditor.marketplace_demo_mode
+  settingsEditor.auto_posting_enabled = map.auto_posting_enabled || settingsEditor.auto_posting_enabled
+  settingsEditor.import_interval_minutes = Number(map.import_interval_minutes || settingsEditor.import_interval_minutes)
+  settingsEditor.publish_interval_minutes = Number(map.publish_interval_minutes || settingsEditor.publish_interval_minutes)
+  settingsEditor.telethon_api_id = Number(map.telethon_api_id || settingsEditor.telethon_api_id)
+  settingsEditor.telethon_api_hash = map.telethon_api_hash || settingsEditor.telethon_api_hash
+  settingsEditor.telethon_session_name = map.telethon_session_name || settingsEditor.telethon_session_name
 }
 
 function hydrateChannelEditors() {
@@ -492,6 +542,31 @@ async function saveOperationalSettings() {
       yookassa_return_url: settingsEditor.yookassa_return_url,
       cryptobot_api_token: settingsEditor.cryptobot_api_token,
       cryptobot_asset: settingsEditor.cryptobot_asset,
+      text_engine: settingsEditor.text_engine,
+      openrouter_api_key: settingsEditor.openrouter_api_key,
+      openrouter_base_url: settingsEditor.openrouter_base_url,
+      openrouter_text_model: settingsEditor.openrouter_text_model,
+      openrouter_text_timeout_seconds: String(settingsEditor.openrouter_text_timeout_seconds),
+      openrouter_text_max_tokens: String(settingsEditor.openrouter_text_max_tokens),
+      openrouter_site_url: settingsEditor.openrouter_site_url,
+      openrouter_site_name: settingsEditor.openrouter_site_name,
+      image_engine: settingsEditor.image_engine,
+      codex_sale_api_key: settingsEditor.codex_sale_api_key,
+      codex_sale_base_url: settingsEditor.codex_sale_base_url,
+      codex_sale_image_model: settingsEditor.codex_sale_image_model,
+      codex_sale_image_size: settingsEditor.codex_sale_image_size,
+      codex_sale_timeout_seconds: String(settingsEditor.codex_sale_timeout_seconds),
+      image_generation_mode: settingsEditor.image_generation_mode,
+      ozon_feed_url: settingsEditor.ozon_feed_url,
+      wildberries_feed_url: settingsEditor.wildberries_feed_url,
+      yandex_market_feed_url: settingsEditor.yandex_market_feed_url,
+      marketplace_demo_mode: settingsEditor.marketplace_demo_mode,
+      auto_posting_enabled: settingsEditor.auto_posting_enabled,
+      import_interval_minutes: String(settingsEditor.import_interval_minutes),
+      publish_interval_minutes: String(settingsEditor.publish_interval_minutes),
+      telethon_api_id: String(settingsEditor.telethon_api_id),
+      telethon_api_hash: settingsEditor.telethon_api_hash,
+      telethon_session_name: settingsEditor.telethon_session_name,
     })
     await reloadAll()
     notice.value = 'Настройки бота и касс сохранены'
@@ -875,6 +950,31 @@ onMounted(reloadAll)
             <label><span>YooKassa return url</span><input v-model="settingsEditor.yookassa_return_url" /></label>
             <label><span>CryptoBot token</span><input v-model="settingsEditor.cryptobot_api_token" type="password" /></label>
             <label><span>CryptoBot asset</span><input v-model="settingsEditor.cryptobot_asset" /></label>
+            <label><span>Text engine</span><input v-model="settingsEditor.text_engine" /></label>
+            <label><span>OpenRouter key</span><input v-model="settingsEditor.openrouter_api_key" type="password" placeholder="sk-or-v1..." /></label>
+            <label><span>OpenRouter base URL</span><input v-model="settingsEditor.openrouter_base_url" /></label>
+            <label><span>OpenRouter model</span><input v-model="settingsEditor.openrouter_text_model" /></label>
+            <label><span>OpenRouter timeout</span><input v-model.number="settingsEditor.openrouter_text_timeout_seconds" type="number" /></label>
+            <label><span>OpenRouter max tokens</span><input v-model.number="settingsEditor.openrouter_text_max_tokens" type="number" /></label>
+            <label><span>OpenRouter site URL</span><input v-model="settingsEditor.openrouter_site_url" /></label>
+            <label><span>OpenRouter site name</span><input v-model="settingsEditor.openrouter_site_name" /></label>
+            <label><span>Image engine</span><input v-model="settingsEditor.image_engine" /></label>
+            <label><span>Codex Sale key</span><input v-model="settingsEditor.codex_sale_api_key" type="password" placeholder="sk-clb..." /></label>
+            <label><span>Codex Sale base URL</span><input v-model="settingsEditor.codex_sale_base_url" /></label>
+            <label><span>Image model</span><input v-model="settingsEditor.codex_sale_image_model" /></label>
+            <label><span>Image size</span><input v-model="settingsEditor.codex_sale_image_size" /></label>
+            <label><span>Image timeout</span><input v-model.number="settingsEditor.codex_sale_timeout_seconds" type="number" /></label>
+            <label><span>Image mode</span><input v-model="settingsEditor.image_generation_mode" /></label>
+            <label><span>Ozon feed URL</span><input v-model="settingsEditor.ozon_feed_url" /></label>
+            <label><span>Wildberries feed URL</span><input v-model="settingsEditor.wildberries_feed_url" /></label>
+            <label><span>Yandex Market feed URL</span><input v-model="settingsEditor.yandex_market_feed_url" /></label>
+            <label><span>Demo mode</span><input v-model="settingsEditor.marketplace_demo_mode" /></label>
+            <label><span>Auto posting</span><input v-model="settingsEditor.auto_posting_enabled" /></label>
+            <label><span>Import interval</span><input v-model.number="settingsEditor.import_interval_minutes" type="number" /></label>
+            <label><span>Publish interval</span><input v-model.number="settingsEditor.publish_interval_minutes" type="number" /></label>
+            <label><span>Telethon API ID</span><input v-model.number="settingsEditor.telethon_api_id" type="number" /></label>
+            <label><span>Telethon API hash</span><input v-model="settingsEditor.telethon_api_hash" type="password" /></label>
+            <label><span>Telethon session</span><input v-model="settingsEditor.telethon_session_name" /></label>
           </div>
           <div class="toggle-row">
             <button class="primary" :disabled="loadingAction" @click="saveOperationalSettings">Сохранить бота и кассы</button>

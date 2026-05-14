@@ -4,13 +4,13 @@ import logging
 
 from telethon import TelegramClient
 
-from app.core.config import get_settings
+from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
 
 
 async def verify_message_exists(channel: str, message_id: int) -> bool:
-    settings = get_settings()
+    settings = load_runtime_config()
     if not settings.telethon_api_id or not settings.telethon_api_hash:
         return False
     try:
@@ -24,4 +24,3 @@ async def verify_message_exists(channel: str, message_id: int) -> bool:
     except Exception as exc:
         logger.exception("Telegram verification failed: %s", exc)
         return False
-
