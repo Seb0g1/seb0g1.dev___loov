@@ -15,6 +15,7 @@ type Project = {
   accent_color: string
   accent_secondary: string
   logo_text: string
+  category_focus_json?: string | null
   is_active: boolean
 }
 
@@ -193,6 +194,7 @@ const settingsEditor = reactive({
 const channelEditors = reactive<Record<number, {
   telegram_channel_url: string
   telegram_channel_id: string
+  category_focus_json: string
   is_active: boolean
 }>>({})
 
@@ -331,6 +333,7 @@ function hydrateChannelEditors() {
     channelEditors[project.id] = {
       telegram_channel_url: project.telegram_channel_url || '',
       telegram_channel_id: project.telegram_channel_id || '',
+      category_focus_json: project.category_focus_json || '',
       is_active: project.is_active,
     }
   }
@@ -585,6 +588,7 @@ async function saveChannels() {
       await api.updateProject(project.id, {
         telegram_channel_url: editor.telegram_channel_url,
         telegram_channel_id: editor.telegram_channel_id,
+        category_focus_json: editor.category_focus_json,
         is_active: editor.is_active,
       })
     }
@@ -1001,6 +1005,8 @@ onMounted(reloadAll)
               </div>
               <label><span>Ссылка канала</span><input v-model="channelEditors[project.id].telegram_channel_url" placeholder="https://t.me/channel" /></label>
               <label><span>ID / @username канала</span><input v-model="channelEditors[project.id].telegram_channel_id" placeholder="@channel или -100..." /></label>
+              <label class="block-field"><span>Категории проекта</span><textarea v-model="channelEditors[project.id].category_focus_json" rows="3" placeholder='["keyboards","monitors"] или keyboards, monitors'></textarea></label>
+              <p class="help-text">Укажи категории через запятую или JSON-массив. Импорт оставит только товары из этих тем.</p>
             </div>
           </div>
           <div class="toggle-row">

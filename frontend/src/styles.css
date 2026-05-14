@@ -623,6 +623,13 @@ label span {
   gap: 7px;
 }
 
+.help-text {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .settings-card-head,
 .inline-check {
   display: flex;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from typing import Any
 
@@ -47,3 +48,46 @@ def fetch_json_feed(source: str, feed_url: str | None, limit: int = 20) -> list[
             if product.source_id and product.title:
                 products.append(product)
     return products
+
+
+def parse_focus_categories(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    value = raw.strip()
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return [str(item).strip().lower() for item in parsed if str(item).strip()]
+    except Exception:
+        pass
+    normalized = value.replace(";", ",").replace("\n", ",").replace("|", ",")
+    return [item.strip().lower() for item in normalized.split(",") if item.strip()]
+
+
+def _haystack(product: MarketplaceProduct) -> str:
+    parts = [
+        product.title,
+        product.brand or "",
+        product.category or "",
+        product.description or "",
+        json.dumps(product.characteristics, ensure_ascii=False),
+    ]
+    return " ".join(parts).lower()
+
+
+def product_matches_focus(product: MarketplaceProduct, focus_categories: list[str]) -> bool:
+    if not focus_categories:
+        return True
+    haystack = _haystack(product)
+    normalized_category = (product.category or "").strip().lower()
+    for category in focus_categories:
+        token = category.strip().lower()
+        if not token:
+            continue
+        if token == normalized_category:
+            return True
+        if token in haystack:
+            return True
+    return False
