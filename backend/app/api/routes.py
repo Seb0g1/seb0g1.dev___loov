@@ -354,7 +354,7 @@ def get_settings(db: Session = Depends(get_db)):
 @router.put("/settings")
 def update_settings(payload: SettingsPatch, db: Session = Depends(get_db)):
     for key, value in payload.values.items():
-        if key in SECRET_KEYS and value.strip() == "":
+        if key in SECRET_KEYS and value.strip() in {"", "[saved]"}:
             continue
         item = db.get(AppSetting, key)
         if not item:

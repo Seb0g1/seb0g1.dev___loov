@@ -190,5 +190,5 @@ def public_runtime_settings(db: Session) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
     for key in RUNTIME_KEYS:
         value = str(values.get(key) or "")
-        result.append({"key": key, "value": "" if key in SECRET_KEYS else value})
+        result.append({"key": key, "value": "[saved]" if key in SECRET_KEYS and value else value})
     return result
