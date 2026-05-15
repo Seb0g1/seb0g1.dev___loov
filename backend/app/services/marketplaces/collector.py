@@ -114,6 +114,14 @@ def _fetch_entries(entries: list[dict[str, str]], limit_per_source: int):
     return products
 
 
+def test_marketplace_feed(marketplace: str, feed_url: str, category: str | None = None, limit: int = 10):
+    normalized_marketplace = _normalize_marketplace(marketplace)
+    fetcher = FETCHERS.get(normalized_marketplace)
+    if not fetcher:
+        raise ValueError("Unknown marketplace")
+    return fetcher(limit, feed_url, category)
+
+
 def collect_marketplace_products(project, limit_per_source: int = 20):
     settings = load_runtime_config()
     focus_categories = parse_focus_categories(getattr(project, "category_focus_json", None))

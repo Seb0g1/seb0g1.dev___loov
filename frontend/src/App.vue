@@ -135,6 +135,14 @@ type FeedEditorRow = {
   url: string
 }
 
+type FeedTestState = {
+  loading: boolean
+  ok?: boolean
+  count?: number
+  error?: string | null
+  items?: Array<{ title: string; price: number; url?: string | null }>
+}
+
 const projects = ref<Project[]>([])
 const analytics = ref<any>(null)
 const products = ref<Product[]>([])
@@ -206,6 +214,7 @@ const channelEditors = reactive<Record<number, {
 }>>({})
 
 const feedEditors = reactive<Record<number, FeedEditorRow[]>>({})
+const feedTests = reactive<Record<string, FeedTestState>>({})
 
 const productEditor = reactive({
   title: '',
@@ -675,24 +684,69 @@ function removeFeed(projectId: number, index: number) {
   feedEditors[projectId]?.splice(index, 1)
 }
 
+function feedKey(projectId: number, index: number) {
+  return `${projectId}:${index}`
+}
+
+function cleanFeedRows(projectId: number) {
+  return (feedEditors[projectId] || [])
+    .map((row) => ({
+      marketplace: normalizeMarketplace(row.marketplace),
+      category: row.category.trim(),
+      url: row.url.trim(),
+    }))
+    .filter((row) => row.url)
+}
+
 async function saveFeeds() {
   loadingAction.value = true
   try {
     for (const project of projects.value) {
-      const rows = feedEditors[project.id] || []
-      const cleanRows = rows
-        .map((row) => ({
-          marketplace: normalizeMarketplace(row.marketplace),
-          category: row.category.trim(),
-          url: row.url.trim(),
-        }))
-        .filter((row) => row.url)
       await api.updateProject(project.id, {
-        feed_config_json: JSON.stringify(cleanRows),
+        feed_config_json: JSON.stringify(cleanFeedRows(project.id)),
       })
     }
     await reloadAll()
     notice.value = 'Фиды проектов сохранены'
+  } finally {
+    loadingAction.value = false
+  }
+}
+
+async function testFeed(projectId: number, index: number) {
+  const row = feedEditors[projectId]?.[index]
+  if (!row?.url?.trim()) {
+    feedTests[feedKey(projectId, index)] = { loading: false, ok: false, count: 0, error: 'Сначала вставь URL фида', items: [] }
+    return
+  }
+  const key = feedKey(projectId, index)
+  feedTests[key] = { loading: true }
+  try {
+    const result = await api.testFeed({
+      marketplace: row.marketplace,
+      category: row.category,
+      url: row.url,
+      limit: 8,
+    })
+    feedTests[key] = {
+      loading: false,
+      ok: Boolean(result.ok),
+      count: Number(result.count || 0),
+      error: result.error || null,
+      items: result.items || [],
+    }
+  } catch (error: any) {
+    feedTests[key] = { loading: false, ok: false, count: 0, error: error?.message || String(error), items: [] }
+  }
+}
+
+async function importProjectProducts(projectId: number) {
+  await saveFeeds()
+  loadingAction.value = true
+  try {
+    const result = await api.importProducts(projectId)
+    await reloadAll()
+    notice.value = `Импорт завершён: ${result.imported || 0} добавлено, ${result.skipped || 0} пропущено`
   } finally {
     loadingAction.value = false
   }
@@ -1049,7 +1103,10 @@ onMounted(reloadAll)
             <div v-for="project in projects" :key="project.id" class="settings-card">
               <div class="settings-card-head">
                 <strong>{{ project.name }}</strong>
-                <button class="ghost small-button" type="button" @click="addFeed(project.id)"><Plus />Добавить фид</button>
+                <div class="row-actions">
+                  <button class="ghost small-button" type="button" @click="addFeed(project.id)"><Plus />Добавить фид</button>
+                  <button class="ghost small-button" type="button" :disabled="loadingAction" @click="importProjectProducts(project.id)">Импорт</button>
+                </div>
               </div>
               <div v-if="feedEditors[project.id]?.length" class="feed-list">
                 <div v-for="(feed, index) in feedEditors[project.id]" :key="`${project.id}-${index}`" class="feed-row">
@@ -1069,7 +1126,17 @@ onMounted(reloadAll)
                     <span>Feed / category URL</span>
                     <input v-model="feed.url" placeholder="https://www.ozon.ru/category/..." />
                   </label>
+                  <button class="ghost small-button" type="button" :disabled="feedTests[feedKey(project.id, index)]?.loading" @click="testFeed(project.id, index)">
+                    {{ feedTests[feedKey(project.id, index)]?.loading ? 'Проверка' : 'Проверить' }}
+                  </button>
                   <button class="ghost icon-button danger-button" type="button" @click="removeFeed(project.id, index)" title="Удалить фид"><Trash2 /></button>
+                  <div v-if="feedTests[feedKey(project.id, index)]" class="feed-test-result" :class="{ 'feed-test-ok': feedTests[feedKey(project.id, index)]?.ok, 'feed-test-bad': feedTests[feedKey(project.id, index)]?.ok === false }">
+                    <strong>{{ feedTests[feedKey(project.id, index)]?.ok ? `Найдено: ${feedTests[feedKey(project.id, index)]?.count}` : 'Фид не дал товары' }}</strong>
+                    <span v-if="feedTests[feedKey(project.id, index)]?.error">{{ feedTests[feedKey(project.id, index)]?.error }}</span>
+                    <ul v-if="feedTests[feedKey(project.id, index)]?.items?.length">
+                      <li v-for="item in feedTests[feedKey(project.id, index)]?.items" :key="`${item.title}-${item.price}`">{{ item.title }} · {{ Number(item.price || 0).toLocaleString('ru-RU') }} ₽</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
               <div v-else class="empty-feed">

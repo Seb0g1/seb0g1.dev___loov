@@ -9,6 +9,7 @@ from app.schemas.common import (
     DraftUpdate,
     DraftRead,
     DraftDecisionRequest,
+    FeedTestRequest,
     GenerateDraftRequest,
     GenerationLogRead,
     ProductCreate,

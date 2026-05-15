@@ -24,6 +24,7 @@ from app.schemas.common import (
     DraftDecisionRequest,
     DraftUpdate,
     DraftRead,
+    FeedTestRequest,
     GenerateDraftRequest,
     ProductCreate,
     ProductRead,
@@ -50,6 +51,7 @@ from app.services.advertising import (
 from app.services.dedup import build_dedup_key
 from app.services.drafts import create_draft_from_product, product_to_payload, regenerate_draft
 from app.services.importer import import_products
+from app.services.marketplaces.collector import test_marketplace_feed
 from app.services.publishing import publish_draft
 from app.services.review_actions import process_draft_decision
 from app.services.runtime_config import SECRET_KEYS, load_runtime_config, public_runtime_settings
@@ -162,6 +164,35 @@ def import_products_endpoint(project_id: int | None = None, db: Session = Depend
         return {"imported": imported, "skipped": skipped}
     result = import_products(db, project)
     return result
+
+
+@router.post("/feeds/test")
+def test_feed(payload: FeedTestRequest):
+    try:
+        items = test_marketplace_feed(payload.marketplace, payload.url, payload.category, payload.limit)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "count": 0,
+            "error": str(exc) or "Feed test failed",
+            "items": [],
+        }
+    return {
+        "ok": bool(items),
+        "count": len(items),
+        "error": None if items else "Товары не найдены. Проверь URL, тип фида или блокировку маркетплейса.",
+        "items": [
+            {
+                "source": item.source,
+                "title": item.title,
+                "price": item.price,
+                "market_price": item.market_price,
+                "rating": item.rating,
+                "url": item.url,
+            }
+            for item in items[: payload.limit]
+        ],
+    }
 
 
 @router.post("/products/{product_id}/exclude")

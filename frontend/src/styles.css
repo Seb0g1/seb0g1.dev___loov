@@ -630,7 +630,7 @@ label span {
 
 .feed-row {
   display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(150px, 220px) minmax(260px, 1fr) 42px;
+  grid-template-columns: minmax(130px, 170px) minmax(140px, 200px) minmax(240px, 1fr) 104px 42px;
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -657,6 +657,38 @@ label span {
 
 .danger-button {
   color: #ffd2d8;
+}
+
+.feed-test-result {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  color: #dce3ef;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.feed-test-result span {
+  color: var(--muted);
+}
+
+.feed-test-result ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.feed-test-ok {
+  border-color: rgba(51, 209, 122, 0.28);
+  background: rgba(51, 209, 122, 0.08);
+}
+
+.feed-test-bad {
+  border-color: rgba(255, 105, 120, 0.28);
+  background: rgba(255, 105, 120, 0.08);
 }
 
 .empty-feed {

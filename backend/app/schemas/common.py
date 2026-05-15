@@ -114,6 +114,13 @@ class SettingsPatch(BaseModel):
     values: dict[str, str]
 
 
+class FeedTestRequest(BaseModel):
+    marketplace: str
+    url: str
+    category: str | None = None
+    limit: int = Field(default=8, ge=1, le=20)
+
+
 class ReferralTemplateRead(ORMModel):
     id: int
     source: str

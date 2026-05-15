@@ -46,6 +46,10 @@ export const api = {
   testTelegramAdmin: () => request('/settings/telegram/test-admin', { method: 'POST' }),
   testTelegramChannels: () => request('/settings/telegram/test-channels', { method: 'POST' }),
   testPaymentSettings: () => request('/settings/payments/test', { method: 'POST' }),
+  testFeed: (payload: Record<string, unknown>) => request('/feeds/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   referrals: (projectId?: number | null) => request('/referrals', undefined, projectId),
   published: (projectId?: number | null) => request('/published', undefined, projectId),
   syncStatus: (projectId?: number | null) => request('/sync-status', undefined, projectId),
