@@ -295,9 +295,101 @@ const parserState = computed(() => {
   }
 })
 
+const syncStatusByProject = computed(() => {
+  const grouped: Record<number, SyncRow[]> = {}
+  for (const row of syncStatus.value) {
+    if (!row.project_id) continue
+    if (!grouped[row.project_id]) grouped[row.project_id] = []
+    grouped[row.project_id].push(row)
+  }
+  return grouped
+})
+
+const feedPresetLabels: Record<string, { title: string; note: string }> = {
+  'uyut-za-kopeiki': {
+    title: 'Уют за копейки',
+    note: 'Дом, декор, текстиль и полезные мелочи.',
+  },
+  'zheleznyi-vitamin': {
+    title: 'Железный Витамин',
+    note: 'Спортпит, витамины и добавки.',
+  },
+  'tochka-stilyev': {
+    title: 'Точка стиля',
+    note: 'Кроссовки, одежда и уличный стиль.',
+  },
+  'techno-halava': {
+    title: 'Техно Халява',
+    note: 'ПК, мониторы, периферия и комплектующие.',
+  },
+}
+
 function projectName(projectId?: number | null) {
   if (!projectId) return 'Без проекта'
   return projects.value.find((item) => item.id === projectId)?.name || `Проект #${projectId}`
+}
+
+function projectFocusCategories(project: Project): string[] {
+  if (!project.category_focus_json) return []
+  const raw = project.category_focus_json.trim()
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean)
+    }
+  } catch {
+    // fall through to comma parsing
+  }
+  return raw
+    .replace(/[\n|;]/g, ',')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function formatSyncDate(value?: string | null) {
+  if (!value) return 'нет данных'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('ru-RU')
+}
+
+function syncStateLabel(state: string) {
+  if (state === 'synced') return 'синхронизировано'
+  if (state === 'syncing') return 'в работе'
+  if (state === 'error') return 'ошибка'
+  return state || 'неизвестно'
+}
+
+function syncStateTone(state: string) {
+  if (state === 'synced') return 'sync-ok'
+  if (state === 'syncing') return 'sync-warn'
+  if (state === 'error') return 'sync-bad'
+  return 'sync-neutral'
+}
+
+function sourceLabel(source: string) {
+  if (source === 'ozon') return 'Ozon'
+  if (source === 'wildberries') return 'Wildberries'
+  if (source === 'yandex_market') return 'Yandex Market'
+  return source
+}
+
+function applyFeedPreset(projectId: number) {
+  const project = projects.value.find((item) => item.id === projectId)
+  if (!project) return
+  const categories = projectFocusCategories(project)
+  const defaultMarketplaceOrder: FeedEditorRow['marketplace'][] = ['ozon', 'wildberries', 'yandex_market']
+  const rows = categories.length
+    ? categories.map((category, index) => ({
+        marketplace: defaultMarketplaceOrder[index % defaultMarketplaceOrder.length],
+        category,
+        url: '',
+      }))
+    : [{ marketplace: 'ozon' as const, category: '', url: '' }]
+  feedEditors[projectId] = rows
+  notice.value = `Шаблон для ${project.name} готов`
 }
 
 function fillProductEditor(product: Product) {
@@ -1142,10 +1234,15 @@ onMounted(reloadAll)
               <div class="settings-card-head">
                 <strong>{{ project.name }}</strong>
                 <div class="row-actions">
+                  <button class="ghost small-button" type="button" @click="applyFeedPreset(project.id)"><Boxes />Шаблон</button>
                   <button class="ghost small-button" type="button" @click="addFeed(project.id)"><Plus />Добавить фид</button>
                   <button class="ghost small-button" type="button" :disabled="loadingAction" @click="importProjectProducts(project.id)">Импорт</button>
                 </div>
               </div>
+              <div class="focus-chips" v-if="projectFocusCategories(project).length">
+                <span v-for="category in projectFocusCategories(project)" :key="`${project.slug}-${category}`" class="focus-chip">{{ category }}</span>
+              </div>
+              <p v-else class="help-text">Категории проекта не заданы. Добавь их в настройках, чтобы шаблон фида заполнился быстрее.</p>
               <div v-if="feedEditors[project.id]?.length" class="feed-list">
                 <div v-for="(feed, index) in feedEditors[project.id]" :key="`${project.id}-${index}`" class="feed-row">
                   <label>
@@ -1224,6 +1321,31 @@ onMounted(reloadAll)
                 ? 'Если у проекта не задан свой feed URL, импорт возьмёт глобальные адреса из настроек.'
                 : 'Глобальные фиды пустые. Используй отдельную страницу фидов или внеси базовые адреса в настройки.' }}
             </p>
+          </div>
+          <div class="sync-panel">
+            <div class="panel-head">
+              <h2>Статус импорта</h2>
+              <span>по проектам и площадкам</span>
+            </div>
+            <div class="sync-projects">
+              <article v-for="project in projects" :key="`sync-${project.id}`" class="sync-project-card">
+                <div class="sync-project-head">
+                  <strong>{{ project.name }}</strong>
+                  <span>{{ syncStatusByProject[project.id]?.length || 0 }} источников</span>
+                </div>
+                <div v-if="syncStatusByProject[project.id]?.length" class="sync-source-list">
+                  <div v-for="row in syncStatusByProject[project.id]" :key="`${project.id}-${row.source}`" class="sync-source-row" :class="syncStateTone(row.state)">
+                    <div>
+                      <strong>{{ sourceLabel(row.source) }}</strong>
+                      <span>{{ syncStateLabel(row.state) }}</span>
+                      <small>{{ row.total_items }} товаров · {{ formatSyncDate(row.last_synced_at) }}</small>
+                    </div>
+                    <em>{{ row.state }}</em>
+                  </div>
+                </div>
+                <p v-else class="help-text">Импорт пока не запускался.</p>
+              </article>
+            </div>
           </div>
         </div>
       </section>

@@ -691,6 +691,111 @@ label span {
   background: rgba(255, 105, 120, 0.08);
 }
 
+.focus-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.focus-chip {
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(77, 124, 255, 0.22);
+  background: rgba(77, 124, 255, 0.08);
+  color: #d6e4ff;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.sync-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(12, 16, 24, 0.64);
+}
+
+.sync-projects {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sync-project-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(8, 12, 20, 0.45);
+}
+
+.sync-project-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sync-project-head strong {
+  min-width: 0;
+}
+
+.sync-project-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sync-source-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sync-source-row strong,
+.sync-source-row span,
+.sync-source-row small {
+  display: block;
+}
+
+.sync-source-row span,
+.sync-source-row small {
+  color: var(--muted);
+}
+
+.sync-source-row em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sync-ok {
+  border-color: rgba(51, 209, 122, 0.24);
+}
+
+.sync-warn {
+  border-color: rgba(255, 177, 59, 0.24);
+}
+
+.sync-bad {
+  border-color: rgba(255, 105, 120, 0.24);
+}
+
+.sync-neutral {
+  border-color: var(--line-soft);
+}
+
 .empty-feed {
   display: flex;
   align-items: center;
@@ -926,6 +1031,10 @@ code {
   .empty-feed {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .sync-source-row {
+    grid-template-columns: 1fr;
   }
 }
 
