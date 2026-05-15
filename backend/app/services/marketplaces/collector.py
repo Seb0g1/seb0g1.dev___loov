@@ -17,6 +17,7 @@ MARKETPLACE_ALIASES = {
     "wildberries": "wildberries",
     "wb": "wildberries",
     "yandex_market": "yandex_market",
+    "yandex market": "yandex_market",
     "yandex": "yandex_market",
     "ym": "yandex_market",
 }
@@ -32,16 +33,43 @@ def _normalize_marketplace(value: Any) -> str:
     return MARKETPLACE_ALIASES.get(str(value or "").strip().lower(), "")
 
 
-def _feed_entry(marketplace: Any, url: Any, category: Any = "") -> dict[str, str] | None:
+def _split_categories(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    categories: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        normalized = text.replace(";", ",").replace("|", ",").replace("\n", ",")
+        for item in normalized.split(","):
+            token = item.strip()
+            if not token:
+                continue
+            key = token.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            categories.append(token)
+    return categories
+
+
+def _feed_entries(marketplace: Any, url: Any, category: Any = "") -> list[dict[str, str]]:
     normalized_marketplace = _normalize_marketplace(marketplace)
     normalized_url = str(url or "").strip()
     if not normalized_marketplace or not normalized_url:
-        return None
-    return {
-        "marketplace": normalized_marketplace,
-        "url": normalized_url,
-        "category": str(category or "").strip(),
-    }
+        return []
+    categories = _split_categories(category) or [""]
+    return [
+        {
+            "marketplace": normalized_marketplace,
+            "url": normalized_url,
+            "category": current_category,
+        }
+        for current_category in categories
+    ]
 
 
 def _parse_feed_config(project) -> list[dict[str, str]]:
@@ -59,51 +87,52 @@ def _parse_feed_config(project) -> list[dict[str, str]]:
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict):
-                        entry = _feed_entry(marketplace, item.get("url"), item.get("category") or item.get("label"))
+                        entries.extend(_feed_entries(marketplace, item.get("url"), item.get("category") or item.get("label")))
                     else:
-                        entry = _feed_entry(marketplace, item)
-                    if entry:
-                        entries.append(entry)
+                        entries.extend(_feed_entries(marketplace, item))
             elif isinstance(value, dict):
-                entry = _feed_entry(marketplace, value.get("url"), value.get("category") or value.get("label"))
-                if entry:
-                    entries.append(entry)
+                entries.extend(_feed_entries(marketplace, value.get("url"), value.get("category") or value.get("label")))
             else:
-                entry = _feed_entry(marketplace, value)
-                if entry:
-                    entries.append(entry)
+                entries.extend(_feed_entries(marketplace, value))
     elif isinstance(data, list):
         for item in data:
             if not isinstance(item, dict):
                 continue
-            entry = _feed_entry(
+            entries.extend(_feed_entries(
                 item.get("marketplace") or item.get("source"),
                 item.get("url") or item.get("feed_url"),
                 item.get("category") or item.get("label"),
-            )
-            if entry:
-                entries.append(entry)
+            ))
     return entries
 
 
 def _global_feed_entries(settings) -> list[dict[str, str]]:
     rows = [
-        _feed_entry("ozon", getattr(settings, "ozon_feed_url", ""), ""),
-        _feed_entry("wildberries", getattr(settings, "wildberries_feed_url", ""), ""),
-        _feed_entry("yandex_market", getattr(settings, "yandex_market_feed_url", ""), ""),
+        *_feed_entries("ozon", getattr(settings, "ozon_feed_url", ""), ""),
+        *_feed_entries("wildberries", getattr(settings, "wildberries_feed_url", ""), ""),
+        *_feed_entries("yandex_market", getattr(settings, "yandex_market_feed_url", ""), ""),
     ]
     return [row for row in rows if row]
 
 
+def project_feed_entries(project) -> list[dict[str, str]]:
+    return _parse_feed_config(project)
+
+
+def global_feed_entries(settings) -> list[dict[str, str]]:
+    return _global_feed_entries(settings)
+
+
 def _fetch_entries(entries: list[dict[str, str]], limit_per_source: int):
     products = []
-    seen_urls_by_marketplace: dict[str, set[str]] = defaultdict(set)
+    seen_urls_by_marketplace: dict[str, set[tuple[str, str]]] = defaultdict(set)
     for entry in entries:
         marketplace = entry["marketplace"]
         feed_url = entry["url"]
-        if feed_url in seen_urls_by_marketplace[marketplace]:
+        signature = (feed_url, entry.get("category") or "")
+        if signature in seen_urls_by_marketplace[marketplace]:
             continue
-        seen_urls_by_marketplace[marketplace].add(feed_url)
+        seen_urls_by_marketplace[marketplace].add(signature)
         fetcher = FETCHERS.get(marketplace)
         if not fetcher:
             continue
@@ -119,7 +148,20 @@ def test_marketplace_feed(marketplace: str, feed_url: str, category: str | None 
     fetcher = FETCHERS.get(normalized_marketplace)
     if not fetcher:
         raise ValueError("Unknown marketplace")
-    return fetcher(limit, feed_url, category)
+    categories = _split_categories(category)
+    category_variants: list[str | None] = categories or [None]
+    products = []
+    seen_keys: set[tuple[str, str | None, str]] = set()
+    for category_variant in category_variants:
+        for item in fetcher(limit, feed_url, category_variant):
+            key = (item.source_id, item.url, item.title)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            products.append(item)
+            if len(products) >= limit:
+                return products[:limit]
+    return products[:limit]
 
 
 def collect_marketplace_products(project, limit_per_source: int = 20):

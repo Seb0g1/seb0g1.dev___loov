@@ -756,6 +756,104 @@ label span {
   background: rgba(20, 27, 39, 0.76);
 }
 
+.diagnostics-layout {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.diagnostics-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(63, 140, 255, 0.07);
+}
+
+.diagnostics-hero strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 18px;
+}
+
+.diagnostics-hero span {
+  color: var(--muted);
+}
+
+.diagnostics-hero-ok {
+  border-color: rgba(51, 209, 122, 0.28);
+  background: rgba(51, 209, 122, 0.08);
+}
+
+.diagnostics-hero-bad {
+  border-color: rgba(255, 177, 59, 0.32);
+  background: rgba(255, 177, 59, 0.08);
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.diagnostics-panel {
+  box-shadow: none;
+}
+
+.diagnostics-list {
+  display: grid;
+  gap: 10px;
+}
+
+.diagnostic-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(8, 12, 20, 0.45);
+}
+
+.diagnostic-row svg {
+  width: 20px;
+  height: 20px;
+}
+
+.diagnostic-row strong,
+.diagnostic-row span,
+.diagnostic-row small {
+  display: block;
+}
+
+.diagnostic-row span,
+.diagnostic-row small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-row em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diagnostic-ok svg {
+  color: var(--success);
+}
+
+.diagnostic-bad svg {
+  color: var(--danger);
+}
+
+.diagnostic-warn svg {
+  color: var(--accent);
+}
+
 code {
   background: rgba(255, 255, 255, 0.08);
   padding: 2px 6px;
@@ -803,6 +901,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
+
   .row {
     grid-template-columns: 1fr;
   }
@@ -843,6 +945,11 @@ code {
 
   .panel-head,
   .settings-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .diagnostics-hero {
     align-items: flex-start;
     flex-direction: column;
   }

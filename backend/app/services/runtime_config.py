@@ -11,6 +11,7 @@ from app.models.entities import AppSetting
 RUNTIME_KEYS = [
     "telegram_bot_token",
     "telegram_bot_username",
+    "telegram_channel_id",
     "telegram_admin_id",
     "yookassa_shop_id",
     "yookassa_secret_key",
@@ -58,6 +59,7 @@ SECRET_KEYS = {
 class RuntimeConfig:
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
+    telegram_channel_id: str = ""
     telegram_admin_id: int = 0
     yookassa_shop_id: str = ""
     yookassa_secret_key: str = ""
@@ -126,6 +128,7 @@ def load_runtime_config(db: Session | None = None) -> RuntimeConfig:
         return RuntimeConfig(
             telegram_bot_token=_setting_value(db, "telegram_bot_token", settings.telegram_bot_token),
             telegram_bot_username=_setting_value(db, "telegram_bot_username", settings.telegram_bot_username),
+            telegram_channel_id=_setting_value(db, "telegram_channel_id", settings.telegram_channel_id),
             telegram_admin_id=_as_int(admin_id_raw, settings.telegram_admin_id or 0),
             yookassa_shop_id=_setting_value(db, "yookassa_shop_id", settings.yookassa_shop_id),
             yookassa_secret_key=_setting_value(db, "yookassa_secret_key", settings.yookassa_secret_key),

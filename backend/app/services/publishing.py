@@ -6,8 +6,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.models.entities import DraftPost, Product, PublishedPost, PublishLog
+from app.services.runtime_config import load_runtime_config
 from app.services.telegram import TelegramPublisher
 
 
@@ -29,13 +29,14 @@ async def publish_draft(db: Session, draft: DraftPost) -> PublishedPost:
     caption = draft.text
     buttons = build_cta_button(product.url if product else None)
     publisher = TelegramPublisher()
+    runtime = load_runtime_config(db)
     channel_id = None
     if product and product.project and product.project.telegram_channel_id:
         channel_id = product.project.telegram_channel_id
     elif draft.project and draft.project.telegram_channel_id:
         channel_id = draft.project.telegram_channel_id
     else:
-        channel_id = get_settings().telegram_channel_id
+        channel_id = runtime.telegram_channel_id
     log = PublishLog(
         project_id=draft.project_id,
         draft_id=draft.id,

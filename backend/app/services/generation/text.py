@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from app.core.config import get_settings
+from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def fallback_text(product: dict, style: str, project: dict | None = None) -> str
 
 
 async def generate_text(product: dict, style: str = "short", project: dict | None = None) -> GenerationResult:
-    settings = get_settings()
+    settings = load_runtime_config()
     prompt = build_prompt(product, style, project)
     provider = "fallback"
 

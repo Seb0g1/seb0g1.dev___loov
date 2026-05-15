@@ -26,6 +26,7 @@ async function request(path: string, init?: RequestInit, projectId?: number | nu
 
 export const api = {
   health: () => request('/health'),
+  diagnostics: () => request('/diagnostics'),
   projects: () => request('/projects'),
   project: (projectId: number) => request(`/projects/${projectId}`),
   updateProject: (projectId: number, payload: Record<string, unknown>) => request(`/projects/${projectId}`, {

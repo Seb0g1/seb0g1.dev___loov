@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -51,7 +52,7 @@ from app.services.advertising import (
 from app.services.dedup import build_dedup_key
 from app.services.drafts import create_draft_from_product, product_to_payload, regenerate_draft
 from app.services.importer import import_products
-from app.services.marketplaces.collector import test_marketplace_feed
+from app.services.marketplaces.collector import global_feed_entries, project_feed_entries, test_marketplace_feed
 from app.services.publishing import publish_draft
 from app.services.review_actions import process_draft_decision
 from app.services.runtime_config import SECRET_KEYS, load_runtime_config, public_runtime_settings
@@ -98,6 +99,174 @@ def to_ad_request_read(request: AdRequest) -> AdRequestRead:
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _diagnostic_item(label: str, ok: bool, status: str, detail: str = "", meta: dict | None = None) -> dict:
+    return {
+        "label": label,
+        "ok": ok,
+        "status": status,
+        "detail": detail,
+        "meta": meta or {},
+    }
+
+
+@router.get("/diagnostics")
+async def diagnostics(db: Session = Depends(get_db)):
+    runtime = load_runtime_config(db)
+    sections: list[dict] = []
+
+    try:
+        project_count = db.scalar(select(func.count(Project.id))) or 0
+        product_count = db.scalar(select(func.count(Product.id))) or 0
+        sections.append(
+            {
+                "name": "Система",
+                "items": [
+                    _diagnostic_item("Backend API", True, "ok", "FastAPI отвечает"),
+                    _diagnostic_item("База данных", True, "ok", f"Проектов: {project_count}, товаров: {product_count}"),
+                    _diagnostic_item("Планировщик", True, "ok", "APScheduler запускается вместе с backend"),
+                ],
+            }
+        )
+    except Exception as exc:
+        sections.append(
+            {
+                "name": "Система",
+                "items": [_diagnostic_item("База данных", False, "error", str(exc))],
+            }
+        )
+
+    telegram_items: list[dict] = []
+    bot_id = None
+    if not runtime.telegram_bot_token:
+        telegram_items.append(_diagnostic_item("Telegram token", False, "empty", "Токен бота не задан в настройках"))
+    else:
+        async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                response = await client.get(f"https://api.telegram.org/bot{runtime.telegram_bot_token}/getMe")
+                payload = response.json()
+                user = payload.get("result", {})
+                bot_id = user.get("id")
+                telegram_items.append(
+                    _diagnostic_item(
+                        "Telegram token",
+                        bool(response.is_success and payload.get("ok")),
+                        "ok" if response.is_success and payload.get("ok") else "error",
+                        f"@{user.get('username')}" if user.get("username") else payload.get("description", "Ответ Telegram получен"),
+                    )
+                )
+            except Exception as exc:
+                telegram_items.append(_diagnostic_item("Telegram token", False, "error", str(exc)))
+
+            if runtime.telegram_admin_id:
+                try:
+                    response = await client.get(
+                        f"https://api.telegram.org/bot{runtime.telegram_bot_token}/getChat",
+                        params={"chat_id": runtime.telegram_admin_id},
+                    )
+                    payload = response.json()
+                    telegram_items.append(
+                        _diagnostic_item(
+                            "Админ",
+                            bool(response.is_success and payload.get("ok")),
+                            "ok" if response.is_success and payload.get("ok") else "warning",
+                            "Админ доступен" if payload.get("ok") else payload.get("description", "Админ не ответил боту"),
+                        )
+                    )
+                except Exception as exc:
+                    telegram_items.append(_diagnostic_item("Админ", False, "error", str(exc)))
+            else:
+                telegram_items.append(_diagnostic_item("Админ", False, "empty", "TELEGRAM_ADMIN_ID не задан"))
+
+            projects = db.scalars(select(Project).where(Project.is_active.is_(True)).order_by(Project.sort_order.asc(), Project.id.asc())).all()
+            for project in projects:
+                if not project.telegram_channel_id:
+                    telegram_items.append(_diagnostic_item(project.name, False, "empty", "ID канала не задан"))
+                    continue
+                try:
+                    chat_response = await client.get(
+                        f"https://api.telegram.org/bot{runtime.telegram_bot_token}/getChat",
+                        params={"chat_id": project.telegram_channel_id},
+                    )
+                    chat_payload = chat_response.json()
+                    ok = bool(chat_response.is_success and chat_payload.get("ok"))
+                    detail = "Канал доступен" if ok else chat_payload.get("description", "Канал недоступен")
+                    if ok and bot_id:
+                        member_response = await client.get(
+                            f"https://api.telegram.org/bot{runtime.telegram_bot_token}/getChatMember",
+                            params={"chat_id": project.telegram_channel_id, "user_id": bot_id},
+                        )
+                        member_payload = member_response.json()
+                        member = member_payload.get("result", {})
+                        role = member.get("status") or "unknown"
+                        ok = ok and role in {"administrator", "creator"}
+                        detail = f"Статус бота в канале: {role}"
+                    telegram_items.append(_diagnostic_item(project.name, ok, "ok" if ok else "warning", detail))
+                except Exception as exc:
+                    telegram_items.append(_diagnostic_item(project.name, False, "error", str(exc)))
+    sections.append({"name": "Telegram", "items": telegram_items})
+
+    sections.append(
+        {
+            "name": "AI и генерация",
+            "items": [
+                _diagnostic_item(
+                    "Текст",
+                    bool(runtime.text_engine and (runtime.openrouter_api_key or runtime.text_engine == "ollama")),
+                    "ok" if runtime.openrouter_api_key or runtime.text_engine == "ollama" else "empty",
+                    f"{runtime.text_engine} / {runtime.openrouter_text_model}",
+                ),
+                _diagnostic_item(
+                    "Картинки",
+                    bool(runtime.image_engine and runtime.codex_sale_api_key),
+                    "ok" if runtime.codex_sale_api_key else "empty",
+                    f"{runtime.image_engine} / {runtime.codex_sale_image_model}",
+                ),
+            ],
+        }
+    )
+
+    sections.append(
+        {
+            "name": "Платежи",
+            "items": [
+                _diagnostic_item("YooKassa", bool(runtime.yookassa_shop_id and runtime.yookassa_secret_key), "ok" if runtime.yookassa_shop_id and runtime.yookassa_secret_key else "empty", runtime.yookassa_shop_id or "Не настроено"),
+                _diagnostic_item("CryptoBot", bool(runtime.cryptobot_api_token), "ok" if runtime.cryptobot_api_token else "empty", runtime.cryptobot_asset or "Не настроено"),
+            ],
+        }
+    )
+
+    feed_items: list[dict] = []
+    projects = db.scalars(select(Project).where(Project.is_active.is_(True)).order_by(Project.sort_order.asc(), Project.id.asc())).all()
+    for project in projects:
+        entries = project_feed_entries(project)
+        if not entries:
+            feed_items.append(_diagnostic_item(project.name, False, "empty", "Проектные фиды не заданы"))
+            continue
+        for entry in entries:
+            label = f"{project.name}: {entry['marketplace']}"
+            try:
+                products = await asyncio.to_thread(test_marketplace_feed, entry["marketplace"], entry["url"], entry.get("category"), 3)
+                feed_items.append(
+                    _diagnostic_item(
+                        label,
+                        bool(products),
+                        "ok" if products else "warning",
+                        f"Найдено: {len(products)}" if products else "Товары не найдены",
+                        {"url": entry["url"], "category": entry.get("category", "")},
+                    )
+                )
+            except Exception as exc:
+                feed_items.append(_diagnostic_item(label, False, "error", str(exc), {"url": entry["url"]}))
+
+    global_entries = global_feed_entries(runtime)
+    for entry in global_entries:
+        feed_items.append(_diagnostic_item(f"Глобальный: {entry['marketplace']}", True, "configured", entry["url"]))
+    sections.append({"name": "Фиды", "items": feed_items})
+
+    ok = all(item["ok"] or item["status"] in {"configured"} for section in sections for item in section["items"])
+    return {"ok": ok, "checked_at": datetime.utcnow().isoformat(), "sections": sections}
 
 
 @router.get("/analytics", response_model=AnalyticsResponse)

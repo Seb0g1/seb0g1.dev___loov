@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 import httpx
 
-from app.core.config import get_settings
 from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
@@ -23,12 +22,11 @@ class TelegramPublishResult:
 
 class TelegramPublisher:
     def __init__(self) -> None:
-        self.settings = get_settings()
         self.runtime = load_runtime_config()
 
     @property
     def enabled(self) -> bool:
-        return bool(self.runtime.telegram_bot_token and self.settings.telegram_channel_id)
+        return bool(self.runtime.telegram_bot_token and self.runtime.telegram_channel_id)
 
     async def send_post(
         self,
@@ -38,7 +36,7 @@ class TelegramPublisher:
         channel_id: str | None = None,
         reply_markup: dict | None = None,
     ) -> TelegramPublishResult:
-        target_channel = channel_id or self.settings.telegram_channel_id
+        target_channel = channel_id or self.runtime.telegram_channel_id
         if not self.runtime.telegram_bot_token or not target_channel:
             return TelegramPublishResult(ok=False, message_id=None, chat_id=None, raw={}, error="Telegram is not configured")
 
@@ -72,12 +70,12 @@ class TelegramPublisher:
                 return TelegramPublishResult(
                     ok=True,
                     message_id=result.get("message_id"),
-                    chat_id=str(result.get("chat", {}).get("id")) if result else self.settings.telegram_channel_id,
+                    chat_id=str(result.get("chat", {}).get("id")) if result else self.runtime.telegram_channel_id,
                     raw=data,
                 )
         except Exception as exc:
             logger.exception("Telegram publish failed: %s", exc)
-            return TelegramPublishResult(ok=False, message_id=None, chat_id=self.settings.telegram_channel_id, raw={}, error=str(exc))
+            return TelegramPublishResult(ok=False, message_id=None, chat_id=self.runtime.telegram_channel_id, raw={}, error=str(exc))
 
     async def send_message(
         self,

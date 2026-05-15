@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { BarChart3, Bot, Boxes, FileText, Megaphone, PackageSearch, Plus, RefreshCw, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
+import { Activity, AlertTriangle, BarChart3, Bot, Boxes, CheckCircle2, FileText, Megaphone, PackageSearch, Plus, RefreshCw, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
 import { api } from './api'
 
 type Project = {
@@ -143,6 +143,25 @@ type FeedTestState = {
   items?: Array<{ title: string; price: number; url?: string | null }>
 }
 
+type DiagnosticItem = {
+  label: string
+  ok: boolean
+  status: string
+  detail?: string
+  meta?: Record<string, unknown>
+}
+
+type DiagnosticSection = {
+  name: string
+  items: DiagnosticItem[]
+}
+
+type DiagnosticsResult = {
+  ok: boolean
+  checked_at: string
+  sections: DiagnosticSection[]
+}
+
 const projects = ref<Project[]>([])
 const analytics = ref<any>(null)
 const products = ref<Product[]>([])
@@ -155,7 +174,7 @@ const settings = ref<SettingRow[]>([])
 const referrals = ref<ReferralRow[]>([])
 const adPackages = ref<AdPackage[]>([])
 const adRequests = ref<AdRequest[]>([])
-const activeTab = ref<'dashboard' | 'products' | 'drafts' | 'feeds' | 'ads' | 'logs' | 'settings'>('dashboard')
+const activeTab = ref<'dashboard' | 'products' | 'drafts' | 'feeds' | 'diagnostics' | 'ads' | 'logs' | 'settings'>('dashboard')
 const notice = ref('')
 const selectedStyle = ref('short')
 const search = ref('')
@@ -171,9 +190,12 @@ const adEditor = reactive({
   published_link: '',
 })
 const settingsTestResult = ref('')
+const diagnostics = ref<DiagnosticsResult | null>(null)
+const diagnosticsLoading = ref(false)
 const settingsEditor = reactive({
   telegram_bot_token: '',
   telegram_bot_username: '',
+  telegram_channel_id: '',
   telegram_admin_id: '',
   yookassa_shop_id: '',
   yookassa_secret_key: '',
@@ -313,6 +335,7 @@ function hydrateSettingsEditors() {
   const map = Object.fromEntries(settings.value.map((item) => [item.key, item.value]))
   settingsEditor.telegram_bot_token = map.telegram_bot_token || settingsEditor.telegram_bot_token
   settingsEditor.telegram_bot_username = map.telegram_bot_username || ''
+  settingsEditor.telegram_channel_id = map.telegram_channel_id || ''
   settingsEditor.telegram_admin_id = map.telegram_admin_id || ''
   settingsEditor.yookassa_shop_id = map.yookassa_shop_id || ''
   settingsEditor.yookassa_secret_key = map.yookassa_secret_key || settingsEditor.yookassa_secret_key
@@ -349,7 +372,7 @@ function hydrateSettingsEditors() {
 function normalizeMarketplace(value: unknown): FeedEditorRow['marketplace'] {
   const marketplace = String(value || '').trim().toLowerCase()
   if (marketplace === 'wb') return 'wildberries'
-  if (marketplace === 'yandex' || marketplace === 'ym') return 'yandex_market'
+  if (marketplace === 'yandex' || marketplace === 'ym' || marketplace === 'yandex market') return 'yandex_market'
   if (marketplace === 'ozon' || marketplace === 'wildberries' || marketplace === 'yandex_market') return marketplace
   return 'ozon'
 }
@@ -609,6 +632,7 @@ async function saveOperationalSettings() {
     await api.updateSettings({
       telegram_bot_token: settingsEditor.telegram_bot_token,
       telegram_bot_username: settingsEditor.telegram_bot_username,
+      telegram_channel_id: settingsEditor.telegram_channel_id,
       telegram_admin_id: settingsEditor.telegram_admin_id,
       yookassa_shop_id: settingsEditor.yookassa_shop_id,
       yookassa_secret_key: settingsEditor.yookassa_secret_key,
@@ -774,6 +798,19 @@ async function runSettingsTest(kind: 'token' | 'admin' | 'channels' | 'payments'
   }
 }
 
+async function runDiagnostics() {
+  diagnosticsLoading.value = true
+  notice.value = 'Запускаю диагностику...'
+  try {
+    diagnostics.value = await api.diagnostics()
+    notice.value = diagnostics.value?.ok ? 'Диагностика пройдена' : 'Диагностика нашла проблемы'
+  } catch (error: any) {
+    notice.value = error?.message || String(error)
+  } finally {
+    diagnosticsLoading.value = false
+  }
+}
+
 function settingMap(key: string): string {
   return settings.value.find((item) => item.key === key)?.value ?? ''
 }
@@ -797,6 +834,7 @@ onMounted(reloadAll)
         <button :class="{ active: activeTab === 'products' }" @click="activeTab = 'products'"><Boxes />Товары</button>
         <button :class="{ active: activeTab === 'drafts' }" @click="activeTab = 'drafts'"><FileText />Черновики</button>
         <button :class="{ active: activeTab === 'feeds' }" @click="activeTab = 'feeds'"><Sparkles />Фиды</button>
+        <button :class="{ active: activeTab === 'diagnostics' }" @click="activeTab = 'diagnostics'"><Activity />Диагностика</button>
         <button :class="{ active: activeTab === 'ads' }" @click="activeTab = 'ads'"><Megaphone />Реклама</button>
         <button :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'"><Bot />Логи</button>
         <button :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'"><Settings />Настройки</button>
@@ -1121,6 +1159,7 @@ onMounted(reloadAll)
                   <label>
                     <span>Категория</span>
                     <input v-model="feed.category" placeholder="Обувь, одежда, ПК..." />
+                    <p class="help-text">Можно указать несколько категорий через запятую.</p>
                   </label>
                   <label class="feed-url-field">
                     <span>Feed / category URL</span>
@@ -1189,6 +1228,49 @@ onMounted(reloadAll)
         </div>
       </section>
 
+      <section v-if="activeTab === 'diagnostics'" class="diagnostics-layout">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Диагностика проекта</h2>
+            <span>{{ diagnostics?.checked_at ? new Date(diagnostics.checked_at).toLocaleString('ru-RU') : 'проверка не запускалась' }}</span>
+          </div>
+          <div class="diagnostics-hero" :class="{ 'diagnostics-hero-ok': diagnostics?.ok, 'diagnostics-hero-bad': diagnostics && !diagnostics.ok }">
+            <div>
+              <strong>{{ diagnostics ? (diagnostics.ok ? 'Все ключевые узлы в порядке' : 'Есть места, которые надо поправить') : 'Запусти проверку всей системы' }}</strong>
+              <span>Проверяется backend, база, Telegram, каналы, AI, платежи и фиды.</span>
+            </div>
+            <button class="primary" :disabled="diagnosticsLoading" @click="runDiagnostics"><Activity />{{ diagnosticsLoading ? 'Проверяю' : 'Проверить всё' }}</button>
+          </div>
+        </div>
+
+        <div v-if="diagnostics" class="diagnostics-grid">
+          <div v-for="section in diagnostics.sections" :key="section.name" class="panel diagnostics-panel">
+            <div class="panel-head">
+              <h2>{{ section.name }}</h2>
+              <span>{{ section.items.filter((item) => item.ok).length }} / {{ section.items.length }}</span>
+            </div>
+            <div class="diagnostics-list">
+              <div v-for="item in section.items" :key="`${section.name}-${item.label}-${item.detail}`" class="diagnostic-row" :class="{ 'diagnostic-ok': item.ok, 'diagnostic-bad': !item.ok && item.status !== 'configured', 'diagnostic-warn': item.status === 'configured' }">
+                <CheckCircle2 v-if="item.ok" />
+                <AlertTriangle v-else />
+                <div>
+                  <strong>{{ item.label }}</strong>
+                  <span>{{ item.detail || item.status }}</span>
+                  <small v-if="item.meta?.url">{{ item.meta.url }}</small>
+                </div>
+                <em>{{ item.status }}</em>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="panel empty-state">
+          <Activity />
+          <strong>Диагностика пока не запускалась</strong>
+          <p>Нажми «Проверить всё», чтобы увидеть реальные проблемы по токенам, каналам, фидам и платежам.</p>
+        </div>
+      </section>
+
       <section v-if="activeTab === 'settings'" class="split-layout">
         <div class="panel">
           <div class="panel-head">
@@ -1198,6 +1280,7 @@ onMounted(reloadAll)
           <div class="form-grid">
             <label><span>Telegram bot token</span><input v-model="settingsEditor.telegram_bot_token" placeholder="123456:ABC..." /></label>
             <label><span>Bot username</span><input v-model="settingsEditor.telegram_bot_username" placeholder="my_bot" /></label>
+            <label><span>Default channel ID</span><input v-model="settingsEditor.telegram_channel_id" placeholder="@channel or -100..." /></label>
             <label><span>Admin Telegram ID</span><input v-model="settingsEditor.telegram_admin_id" placeholder="123456789" /></label>
             <label><span>YooKassa shop id</span><input v-model="settingsEditor.yookassa_shop_id" /></label>
             <label><span>YooKassa secret</span><input v-model="settingsEditor.yookassa_secret_key" type="password" /></label>

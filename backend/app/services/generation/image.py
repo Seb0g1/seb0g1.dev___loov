@@ -10,6 +10,7 @@ import httpx
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from app.core.config import get_settings
+from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def build_image_prompt(product: dict, project: dict | None = None) -> str:
 
 
 async def _generate_codex_sale_reference_image(product: dict, project: dict | None = None) -> Image.Image | None:
-    settings = get_settings()
+    settings = load_runtime_config()
     if settings.image_engine != "codex_sale" or not settings.codex_sale_api_key:
         return None
 

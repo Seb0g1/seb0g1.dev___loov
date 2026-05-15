@@ -5,8 +5,8 @@ from html import escape
 
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.models.entities import DraftPost
+from app.services.runtime_config import load_runtime_config
 from app.services.telegram import TelegramPublisher
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ def build_review_caption(draft: DraftPost) -> str:
 
 
 async def send_draft_for_review(db: Session, draft: DraftPost) -> bool:
-    settings = get_settings()
+    settings = load_runtime_config(db)
     if not settings.telegram_bot_token or not settings.telegram_admin_id:
         return False
     publisher = TelegramPublisher()
