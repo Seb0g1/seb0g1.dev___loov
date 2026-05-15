@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { BarChart3, Bot, Boxes, FileText, Megaphone, PackageSearch, RefreshCw, Settings, Sparkles } from 'lucide-vue-next'
+import { BarChart3, Bot, Boxes, FileText, Megaphone, PackageSearch, Plus, RefreshCw, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
 import { api } from './api'
 
 type Project = {
@@ -129,6 +129,12 @@ type AdRequest = {
   updated_at: string
 }
 
+type FeedEditorRow = {
+  marketplace: 'ozon' | 'wildberries' | 'yandex_market'
+  category: string
+  url: string
+}
+
 const projects = ref<Project[]>([])
 const analytics = ref<any>(null)
 const products = ref<Product[]>([])
@@ -199,11 +205,7 @@ const channelEditors = reactive<Record<number, {
   is_active: boolean
 }>>({})
 
-const feedEditors = reactive<Record<number, {
-  ozon_feed_url: string
-  wildberries_feed_url: string
-  yandex_market_feed_url: string
-}>>({})
+const feedEditors = reactive<Record<number, FeedEditorRow[]>>({})
 
 const productEditor = reactive({
   title: '',
@@ -335,14 +337,48 @@ function hydrateSettingsEditors() {
   settingsEditor.telethon_session_name = map.telethon_session_name || settingsEditor.telethon_session_name
 }
 
-function parseFeedConfig(raw?: string | null) {
-  if (!raw) return {}
+function normalizeMarketplace(value: unknown): FeedEditorRow['marketplace'] {
+  const marketplace = String(value || '').trim().toLowerCase()
+  if (marketplace === 'wb') return 'wildberries'
+  if (marketplace === 'yandex' || marketplace === 'ym') return 'yandex_market'
+  if (marketplace === 'ozon' || marketplace === 'wildberries' || marketplace === 'yandex_market') return marketplace
+  return 'ozon'
+}
+
+function parseFeedConfig(raw?: string | null): FeedEditorRow[] {
+  if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as Record<string, unknown>
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((item) => item && typeof item === 'object')
+        .map((item: any) => ({
+          marketplace: normalizeMarketplace(item.marketplace || item.source),
+          category: String(item.category || item.label || ''),
+          url: String(item.url || item.feed_url || ''),
+        }))
+        .filter((item) => item.url.trim())
+    }
+    if (parsed && typeof parsed === 'object') {
+      return Object.entries(parsed as Record<string, unknown>).flatMap(([marketplace, value]) => {
+        const normalized = normalizeMarketplace(marketplace)
+        if (Array.isArray(value)) {
+          return value.map((item: any) => ({
+            marketplace: normalized,
+            category: typeof item === 'object' && item ? String(item.category || item.label || '') : '',
+            url: typeof item === 'object' && item ? String(item.url || item.feed_url || '') : String(item || ''),
+          }))
+        }
+        if (value && typeof value === 'object') {
+          const item = value as Record<string, unknown>
+          return [{ marketplace: normalized, category: String(item.category || item.label || ''), url: String(item.url || item.feed_url || '') }]
+        }
+        return [{ marketplace: normalized, category: '', url: String(value || '') }]
+      }).filter((item) => item.url.trim())
+    }
+    return []
   } catch {
-    return {}
+    return []
   }
 }
 
@@ -359,12 +395,7 @@ function hydrateChannelEditors() {
 
 function hydrateFeedEditors() {
   for (const project of projects.value) {
-    const config = parseFeedConfig(project.feed_config_json)
-    feedEditors[project.id] = {
-      ozon_feed_url: typeof config.ozon === 'string' ? config.ozon : '',
-      wildberries_feed_url: typeof config.wildberries === 'string' ? config.wildberries : '',
-      yandex_market_feed_url: typeof config.yandex_market === 'string' ? config.yandex_market : '',
-    }
+    feedEditors[project.id] = parseFeedConfig(project.feed_config_json)
   }
 }
 
@@ -629,18 +660,35 @@ async function saveChannels() {
   }
 }
 
+function addFeed(projectId: number) {
+  if (!feedEditors[projectId]) {
+    feedEditors[projectId] = []
+  }
+  feedEditors[projectId].push({
+    marketplace: 'ozon',
+    category: '',
+    url: '',
+  })
+}
+
+function removeFeed(projectId: number, index: number) {
+  feedEditors[projectId]?.splice(index, 1)
+}
+
 async function saveFeeds() {
   loadingAction.value = true
   try {
     for (const project of projects.value) {
-      const editor = feedEditors[project.id]
-      if (!editor) continue
+      const rows = feedEditors[project.id] || []
+      const cleanRows = rows
+        .map((row) => ({
+          marketplace: normalizeMarketplace(row.marketplace),
+          category: row.category.trim(),
+          url: row.url.trim(),
+        }))
+        .filter((row) => row.url)
       await api.updateProject(project.id, {
-        feed_config_json: JSON.stringify({
-          ozon: editor.ozon_feed_url.trim(),
-          wildberries: editor.wildberries_feed_url.trim(),
-          yandex_market: editor.yandex_market_feed_url.trim(),
-        }),
+        feed_config_json: JSON.stringify(cleanRows),
       })
     }
     await reloadAll()
@@ -1001,12 +1049,32 @@ onMounted(reloadAll)
             <div v-for="project in projects" :key="project.id" class="settings-card">
               <div class="settings-card-head">
                 <strong>{{ project.name }}</strong>
-                <span>{{ project.slug }}</span>
+                <button class="ghost small-button" type="button" @click="addFeed(project.id)"><Plus />Добавить фид</button>
               </div>
-              <div class="form-grid compact-grid">
-                <label><span>Ozon feed / category URL</span><input v-model="feedEditors[project.id].ozon_feed_url" placeholder="https://www.ozon.ru/category/..." /></label>
-                <label><span>Wildberries feed URL</span><input v-model="feedEditors[project.id].wildberries_feed_url" placeholder="https://www.wildberries.ru/catalog/..." /></label>
-                <label><span>Yandex Market feed URL</span><input v-model="feedEditors[project.id].yandex_market_feed_url" placeholder="https://market.yandex.ru/catalog/..." /></label>
+              <div v-if="feedEditors[project.id]?.length" class="feed-list">
+                <div v-for="(feed, index) in feedEditors[project.id]" :key="`${project.id}-${index}`" class="feed-row">
+                  <label>
+                    <span>Маркетплейс</span>
+                    <select v-model="feed.marketplace">
+                      <option value="ozon">Ozon</option>
+                      <option value="wildberries">Wildberries</option>
+                      <option value="yandex_market">Yandex Market</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Категория</span>
+                    <input v-model="feed.category" placeholder="Обувь, одежда, ПК..." />
+                  </label>
+                  <label class="feed-url-field">
+                    <span>Feed / category URL</span>
+                    <input v-model="feed.url" placeholder="https://www.ozon.ru/category/..." />
+                  </label>
+                  <button class="ghost icon-button danger-button" type="button" @click="removeFeed(project.id, index)" title="Удалить фид"><Trash2 /></button>
+                </div>
+              </div>
+              <div v-else class="empty-feed">
+                <span>Фидов пока нет</span>
+                <button class="primary" type="button" @click="addFeed(project.id)"><Plus />Добавить первый фид</button>
               </div>
               <p class="help-text">Можно вставлять готовый фид, ссылку на категорию или подкатегорию. Если здесь пусто, система возьмёт глобальный фид из настроек.</p>
             </div>
