@@ -172,8 +172,8 @@ def collect_marketplace_products(project, limit_per_source: int = 20):
     products = _fetch_entries(project_feed_entries, limit_per_source)
     if not products:
         products = _fetch_entries(_global_feed_entries(settings), limit_per_source)
-        if focus_categories:
-            products = [product for product in products if product_matches_focus(product, focus_categories)]
+    if focus_categories:
+        products = [product for product in products if product_matches_focus(product, focus_categories)]
 
     if not products and getattr(settings, "marketplace_demo_mode", False):
         products.extend(

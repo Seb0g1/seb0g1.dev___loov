@@ -86,7 +86,55 @@ def _stable_source_id(record: dict[str, Any]) -> str:
     return hashlib.sha1(seed.encode("utf-8", errors="ignore")).hexdigest()[:18]
 
 
+def _merge_structured_record(record: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(record)
+
+    item = merged.get("item")
+    if isinstance(item, dict):
+        merged = {**item, **merged}
+
+    brand = merged.get("brand")
+    if isinstance(brand, dict):
+        merged["brand"] = brand.get("name") or brand.get("title") or brand.get("@id") or brand.get("brand") or ""
+
+    offers = merged.get("offers")
+    if isinstance(offers, list) and offers:
+        first_offer = offers[0]
+        if isinstance(first_offer, dict):
+            offers = first_offer
+    if isinstance(offers, dict):
+        for key in ("price", "priceCurrency", "url", "availability", "lowPrice", "highPrice", "priceSpecification"):
+            value = offers.get(key)
+            if value not in (None, "", []):
+                if key not in merged or merged[key] in (None, "", []):
+                    merged[key] = value
+        if not merged.get("url"):
+            for key in ("url", "@id", "link"):
+                value = offers.get(key)
+                if value:
+                    merged["url"] = value
+                    break
+        if not merged.get("stock_count"):
+            availability = str(offers.get("availability") or "").lower()
+            if "instock" in availability or "in_stock" in availability:
+                merged["stock_count"] = 1
+
+    aggregate_rating = merged.get("aggregateRating")
+    if isinstance(aggregate_rating, dict):
+        for key in ("ratingValue", "reviewCount"):
+            value = aggregate_rating.get(key)
+            if value not in (None, "") and key not in merged:
+                merged[key] = value
+
+    image = merged.get("image")
+    if image and not merged.get("images"):
+        merged["images"] = _list_images(image)
+
+    return merged
+
+
 def _to_product(source: str, record: dict[str, Any], category_hint: str | None = None) -> MarketplaceProduct:
+    record = _merge_structured_record(record)
     aggregate_rating = record.get("aggregateRating") if isinstance(record.get("aggregateRating"), dict) else {}
     price = _safe_float(
         record.get("price")
@@ -95,6 +143,8 @@ def _to_product(source: str, record: dict[str, Any], category_hint: str | None =
         or record.get("priceValue")
         or record.get("lowPrice")
         or record.get("amount")
+        or (record.get("offers", {}) if isinstance(record.get("offers"), dict) else {}).get("price")
+        or (record.get("offers", {}) if isinstance(record.get("offers"), dict) else {}).get("lowPrice")
     )
     market_price = _safe_float(
         record.get("market_price")
@@ -102,14 +152,18 @@ def _to_product(source: str, record: dict[str, Any], category_hint: str | None =
         or record.get("oldPrice")
         or record.get("price_before_discount")
         or record.get("highPrice")
+        or (record.get("offers", {}) if isinstance(record.get("offers"), dict) else {}).get("highPrice")
     )
     category = _clean_text(record.get("category") or record.get("category_name") or record.get("categoryName") or category_hint or "general")
     images = _list_images(record.get("images") or record.get("photos") or record.get("image") or record.get("picture"))
+    brand_value = record.get("brand") or record.get("vendor") or record.get("brandName")
+    if isinstance(brand_value, dict):
+        brand_value = brand_value.get("name") or brand_value.get("title") or brand_value.get("brand")
     return MarketplaceProduct(
         source=source,
         source_id=_stable_source_id(record),
         title=_clean_text(record.get("title") or record.get("name") or record.get("product_name") or record.get("productName") or "Unknown product"),
-        brand=_clean_text(record.get("brand") or record.get("vendor") or record.get("brandName")) or None,
+        brand=_clean_text(brand_value) or None,
         category=category,
         price=price or 0,
         market_price=market_price,
@@ -126,9 +180,16 @@ def _to_product(source: str, record: dict[str, Any], category_hint: str | None =
 
 def _is_product_like(record: dict[str, Any]) -> bool:
     keys = {str(key).lower() for key in record}
+    type_name = str(record.get("@type") or record.get("type") or "").strip().lower()
     has_name = bool(keys & {"title", "name", "product_name", "productname"})
     has_price = bool(keys & {"price", "current_price", "currentprice", "pricevalue", "lowprice", "amount"})
     has_link = bool(keys & {"url", "link", "href"})
+    if type_name == "itemlist":
+        return False
+    if type_name in {"product", "offer"}:
+        return True
+    if "offers" in keys and (has_name or has_link):
+        return True
     return has_name and (has_price or has_link)
 
 
@@ -136,6 +197,18 @@ def _walk_records(value: Any, records: list[dict[str, Any]], limit: int) -> None
     if len(records) >= limit:
         return
     if isinstance(value, dict):
+        type_name = str(value.get("@type") or value.get("type") or "").strip().lower()
+        if type_name == "itemlist":
+            items = value.get("itemListElement")
+            if isinstance(items, list):
+                _walk_records(items, records, limit)
+            return
+        if isinstance(value.get("item"), dict):
+            _walk_records(value.get("item"), records, limit)
+            return
+        if isinstance(value.get("itemListElement"), list):
+            _walk_records(value.get("itemListElement"), records, limit)
+            return
         if _is_product_like(value):
             records.append(value)
             return
