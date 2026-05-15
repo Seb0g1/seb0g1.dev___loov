@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from typing import Any
+from urllib.parse import quote_plus
 
 from app.services.marketplaces.common import parse_focus_categories, product_matches_focus
 from app.services.marketplaces.demo import get_demo_products
@@ -33,6 +34,65 @@ def _normalize_marketplace(value: Any) -> str:
     return MARKETPLACE_ALIASES.get(str(value or "").strip().lower(), "")
 
 
+FEED_SEARCH_ALIASES = {
+    "bedding": "постельное белье",
+    "lamps": "лампа",
+    "organizers": "органайзер",
+    "tableware": "посуда",
+    "protein": "протеин",
+    "vitamins": "витамины",
+    "creatine": "креатин",
+    "omega-3": "омега 3",
+    "sneakers": "кроссовки",
+    "apparel": "одежда",
+    "streetwear": "streetwear",
+    "laptops": "ноутбук",
+    "monitors": "монитор",
+    "keyboards": "клавиатура",
+    "mice": "мышь",
+    "components": "комплектующие",
+    "headphones": "наушники",
+    "headset": "гарнитура",
+    "accessories": "аксессуары",
+    "pc-case": "корпус",
+    "computer-case": "корпус",
+    "power-supply": "блок питания",
+    "motherboard": "материнская плата",
+    "graphics-card": "видеокарта",
+    "ssd": "ssd",
+    "ram": "оперативная память",
+}
+
+
+def _marketplace_search_query(category: Any) -> str:
+    raw = str(category or "").strip()
+    if not raw:
+        return ""
+    tokens = [item.strip() for item in raw.replace(";", ",").replace("|", ",").replace("\n", ",").split(",") if item.strip()]
+    mapped = [FEED_SEARCH_ALIASES.get(token.lower(), token) for token in tokens]
+    seen: set[str] = set()
+    query_parts: list[str] = []
+    for token in mapped:
+        key = token.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        query_parts.append(token)
+    return " ".join(query_parts).strip()
+
+
+def _build_marketplace_search_url(marketplace: Any, category: Any = "") -> str:
+    normalized_marketplace = _normalize_marketplace(marketplace)
+    query = _marketplace_search_query(category)
+    if normalized_marketplace == "ozon":
+        return f"https://www.ozon.ru/search/?text={quote_plus(query)}" if query else "https://www.ozon.ru/"
+    if normalized_marketplace == "wildberries":
+        return f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote_plus(query)}" if query else "https://www.wildberries.ru/"
+    if normalized_marketplace == "yandex_market":
+        return f"https://market.yandex.ru/search?text={quote_plus(query)}" if query else "https://market.yandex.ru/"
+    return ""
+
+
 def _split_categories(value: Any) -> list[str]:
     if value in (None, ""):
         return []
@@ -59,13 +119,17 @@ def _split_categories(value: Any) -> list[str]:
 def _feed_entries(marketplace: Any, url: Any, category: Any = "") -> list[dict[str, str]]:
     normalized_marketplace = _normalize_marketplace(marketplace)
     normalized_url = str(url or "").strip()
-    if not normalized_marketplace or not normalized_url:
+    if not normalized_marketplace:
         return []
     categories = _split_categories(category) or [""]
+    search_query = _marketplace_search_query(category)
+    search_url = normalized_url or (_build_marketplace_search_url(normalized_marketplace, category) if search_query else "")
+    if not search_url:
+        return []
     return [
         {
             "marketplace": normalized_marketplace,
-            "url": normalized_url,
+            "url": search_url,
             "category": current_category,
         }
         for current_category in categories
@@ -148,12 +212,16 @@ def test_marketplace_feed(marketplace: str, feed_url: str, category: str | None 
     fetcher = FETCHERS.get(normalized_marketplace)
     if not fetcher:
         raise ValueError("Unknown marketplace")
+    search_query = _marketplace_search_query(category)
+    normalized_feed_url = str(feed_url or "").strip() or (_build_marketplace_search_url(normalized_marketplace, category) if search_query else "")
+    if not normalized_feed_url:
+        return []
     categories = _split_categories(category)
     category_variants: list[str | None] = categories or [None]
     products = []
     seen_keys: set[tuple[str, str | None, str]] = set()
     for category_variant in category_variants:
-        for item in fetcher(limit, feed_url, category_variant):
+        for item in fetcher(limit, normalized_feed_url, category_variant):
             key = (item.source_id, item.url, item.title)
             if key in seen_keys:
                 continue

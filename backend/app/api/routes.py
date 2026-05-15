@@ -53,6 +53,7 @@ from app.services.dedup import build_dedup_key
 from app.services.drafts import create_draft_from_product, product_to_payload, regenerate_draft
 from app.services.importer import import_products
 from app.services.marketplaces.collector import global_feed_entries, project_feed_entries, test_marketplace_feed
+from app.services.marketplaces.common import inspect_feed_source
 from app.services.publishing import publish_draft
 from app.services.review_actions import process_draft_decision
 from app.services.runtime_config import SECRET_KEYS, load_runtime_config, public_runtime_settings
@@ -361,6 +362,19 @@ def test_feed(payload: FeedTestRequest):
             }
             for item in items[: payload.limit]
         ],
+    }
+
+
+@router.post("/feeds/inspect")
+def inspect_feed(payload: FeedTestRequest):
+    debug = inspect_feed_source(payload.url)
+    return {
+        "ok": True,
+        "status_code": debug["status_code"],
+        "content_type": debug["content_type"],
+        "source_text": str(debug["source_text"])[:2000],
+        "rendered_html": str(debug["rendered_html"])[:2000],
+        "rendered_text": str(debug["rendered_text"])[:2000],
     }
 
 

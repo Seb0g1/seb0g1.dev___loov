@@ -25,6 +25,10 @@ DEFAULT_HEADERS = {
 PRICE_RE = re.compile(r"(\d[\d\s\u00a0]{1,})(?:[,.]\d+)?\s*(?:\u20bd|руб\.?|р\b)", re.IGNORECASE)
 RATING_RE = re.compile(r"(?<!\d)([1-5][,.]\d)(?!\d)")
 REVIEWS_RE = re.compile(r"(\d[\d\s\u00a0]*)\s*(?:отзыв|review)", re.IGNORECASE)
+LINE_PRICE_RE = re.compile(r"^\d[\d\s\u00a0]{0,}(?:[,.]\d+)?\s*(?:\u20bd|руб\.?|р\.?)$", re.IGNORECASE)
+LINE_DISCOUNT_RE = re.compile(r"[−-](\d{1,3})%")
+LINE_STOCK_RE = re.compile(r"(\d[\d\s\u00a0]*)\s*шт осталось", re.IGNORECASE)
+LINE_RATING_RE = re.compile(r"^[1-5](?:[,.]\d)?$")
 
 
 def _clean_text(value: Any) -> str:
@@ -411,6 +415,136 @@ def _parse_html_products(source: str, page_url: str, text: str, limit: int, cate
     return products[:limit]
 
 
+def _text_price_line(line: str) -> bool:
+    if not LINE_PRICE_RE.match(line):
+        return False
+    lowered = line.lower()
+    if any(token in lowered for token in ("до ", "и дороже", "неважно", "цена", "рассрочка")):
+        return False
+    return True
+
+
+def _text_line_is_marker(line: str) -> bool:
+    lowered = line.strip().lower()
+    return lowered in {
+        "оригинал",
+        "распродажа",
+        "цена что надо",
+        "вау-цены",
+        "все фильтры",
+        "завтра",
+        "сегодня",
+        "неважно",
+        "доставка",
+        "магазин",
+        "баллы за отзывы",
+        "цена",
+        "рассрочка",
+        "посмотреть все",
+        "ozon",
+    }
+
+
+def _parse_text_products(source: str, page_url: str, text: str, limit: int, category_hint: str | None) -> list[MarketplaceProduct]:
+    lines = [_clean_text(line) for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    products: list[MarketplaceProduct] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for index, line in enumerate(lines):
+        if len(products) >= limit:
+            break
+        if not _text_price_line(line):
+            continue
+        previous = lines[index - 1] if index > 0 else ""
+        if _text_price_line(previous):
+            continue
+
+        window = lines[index + 1 : index + 12]
+        if not window:
+            continue
+
+        current_price = _safe_float(line) or 0
+        if current_price <= 0:
+            continue
+
+        market_price = None
+        discount_percent = None
+        stock_count = None
+        rating = None
+        reviews_count = None
+        brand = ""
+        title = ""
+
+        for candidate in window[:3]:
+            if _text_price_line(candidate):
+                maybe_old_price = _safe_float(candidate)
+                if maybe_old_price and maybe_old_price > current_price:
+                    market_price = maybe_old_price
+                continue
+            discount_match = LINE_DISCOUNT_RE.search(candidate)
+            if discount_match and discount_percent is None:
+                discount_percent = _safe_float(discount_match.group(1))
+            stock_match = LINE_STOCK_RE.search(candidate)
+            if stock_match and stock_count is None:
+                stock_count = _safe_int(stock_match.group(1))
+
+        candidates = [item for item in window if not _text_price_line(item) and not _text_line_is_marker(item)]
+        for candidate in candidates:
+            if rating is None and LINE_RATING_RE.match(candidate):
+                rating = _safe_float(candidate)
+                continue
+            if reviews_count is None:
+                reviews_match = REVIEWS_RE.search(candidate)
+                if reviews_match:
+                    reviews_count = _safe_int(reviews_match.group(1))
+                    continue
+
+        title_candidates = [
+            item
+            for item in candidates
+            if not LINE_RATING_RE.match(item)
+            and not REVIEWS_RE.search(item)
+            and not LINE_STOCK_RE.search(item)
+            and not LINE_DISCOUNT_RE.search(item)
+        ]
+        if title_candidates:
+            title = max(title_candidates, key=lambda item: (len(item), item))
+            for candidate in title_candidates:
+                if candidate != title and len(candidate) <= 48:
+                    brand = candidate
+                    break
+
+        if not title:
+            continue
+
+        key = (title.lower(), f"{current_price:.2f}", (brand or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        record = {
+            "source_id": f"{source}:{hashlib.sha1('|'.join(key).encode('utf-8', errors='ignore')).hexdigest()[:18]}",
+            "title": title,
+            "brand": brand or None,
+            "category": category_hint or "general",
+            "price": current_price,
+            "market_price": market_price,
+            "discount_percent": discount_percent,
+            "rating": rating,
+            "reviews_count": reviews_count,
+            "stock_count": stock_count,
+            "url": page_url,
+            "description": title,
+            "images": [],
+        }
+        product = _to_product(source, record, category_hint)
+        if product.source_id and product.title and product.price > 0:
+            products.append(product)
+
+    return products[:limit]
+
+
 def _render_html_with_browser(feed_url: str) -> str:
     try:
         from playwright.sync_api import sync_playwright
@@ -430,9 +564,29 @@ def _render_html_with_browser(feed_url: str) -> str:
             context = browser.new_context(
                 user_agent=DEFAULT_HEADERS["User-Agent"],
                 locale="ru-RU",
+                timezone_id="Europe/Moscow",
                 viewport={"width": 1440, "height": 1100},
+                extra_http_headers={"Accept-Language": DEFAULT_HEADERS["Accept-Language"]},
             )
             page = context.new_page()
+            page.add_init_script(
+                """
+                (() => {
+                  const define = (target, key, value) => {
+                    try {
+                      Object.defineProperty(target, key, { get: () => value, configurable: true });
+                    } catch (error) {
+                      void error;
+                    }
+                  };
+                  define(navigator, 'webdriver', undefined);
+                  define(navigator, 'languages', ['ru-RU', 'ru', 'en-US', 'en']);
+                  define(navigator, 'platform', 'Win32');
+                  define(navigator, 'hardwareConcurrency', 8);
+                  define(navigator, 'deviceMemory', 8);
+                })();
+                """
+            )
             page.goto(feed_url, wait_until="domcontentloaded", timeout=60000)
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
@@ -444,6 +598,82 @@ def _render_html_with_browser(feed_url: str) -> str:
             return html
     except Exception:
         return ""
+
+
+def _render_text_with_browser(feed_url: str) -> str:
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        return ""
+
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                ],
+            )
+            context = browser.new_context(
+                user_agent=DEFAULT_HEADERS["User-Agent"],
+                locale="ru-RU",
+                timezone_id="Europe/Moscow",
+                viewport={"width": 1440, "height": 1100},
+                extra_http_headers={"Accept-Language": DEFAULT_HEADERS["Accept-Language"]},
+            )
+            page = context.new_page()
+            page.add_init_script(
+                """
+                (() => {
+                  const define = (target, key, value) => {
+                    try {
+                      Object.defineProperty(target, key, { get: () => value, configurable: true });
+                    } catch (error) {
+                      void error;
+                    }
+                  };
+                  define(navigator, 'webdriver', undefined);
+                  define(navigator, 'languages', ['ru-RU', 'ru', 'en-US', 'en']);
+                  define(navigator, 'platform', 'Win32');
+                  define(navigator, 'hardwareConcurrency', 8);
+                  define(navigator, 'deviceMemory', 8);
+                })();
+                """
+            )
+            page.goto(feed_url, wait_until="domcontentloaded", timeout=60000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            page.wait_for_timeout(2500)
+            text = page.locator("body").inner_text(timeout=10000)
+            browser.close()
+            return text
+    except Exception:
+        return ""
+
+
+def _looks_like_antibot_page(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "antibot challenge page",
+            "challenge-data",
+            "captcha",
+            "verify you are human",
+            "bot challenge",
+            "антибот",
+            "access denied",
+            "без javascript",
+            "не работает без javascript",
+            "похоже, вы используете vpn",
+            "/challenges/antibot",
+            "data-site-key",
+        )
+    )
 
 
 def _parse_feed_text(source: str, feed_url: str, text: str, content_type: str, limit: int, category_hint: str | None) -> list[MarketplaceProduct]:
@@ -475,10 +705,12 @@ def fetch_json_feed(source: str, feed_url: str | None, limit: int = 20, category
     products: list[MarketplaceProduct] = []
     text = ""
     content_type = ""
+    blocked = False
     try:
         response = httpx.get(feed_url, timeout=30, follow_redirects=True, headers=DEFAULT_HEADERS)
         text = response.text
         content_type = response.headers.get("content-type", "")
+        blocked = response.status_code in {401, 403, 429, 498} or _looks_like_antibot_page(text)
         products = _parse_feed_text(source, str(response.url), text, content_type, limit, category_hint)
     except Exception:
         products = []
@@ -488,9 +720,47 @@ def fetch_json_feed(source: str, feed_url: str | None, limit: int = 20, category
 
     rendered = _render_html_with_browser(feed_url)
     if rendered and rendered != text:
-        return _parse_html_products(source, feed_url, rendered, limit, category_hint)
+        products = _parse_html_products(source, feed_url, rendered, limit, category_hint)
+        if products:
+            return products[:limit]
+        rendered_text = _render_text_with_browser(feed_url)
+        if rendered_text and rendered_text != rendered:
+            products = _parse_text_products(source, feed_url, rendered_text, limit, category_hint)
+            if products:
+                return products[:limit]
+        if _looks_like_antibot_page(rendered):
+            raise RuntimeError(f"{source} blocked by antibot challenge")
+
+    if blocked:
+        raise RuntimeError(f"{source} blocked by antibot challenge")
 
     return []
+
+
+def inspect_feed_source(feed_url: str | None) -> dict[str, str | int]:
+    if not feed_url:
+        return {"status_code": 0, "content_type": "", "source_text": "", "rendered_html": "", "rendered_text": ""}
+
+    status_code = 0
+    content_type = ""
+    source_text = ""
+    try:
+        response = httpx.get(feed_url, timeout=30, follow_redirects=True, headers=DEFAULT_HEADERS)
+        status_code = response.status_code
+        content_type = response.headers.get("content-type", "")
+        source_text = response.text
+    except Exception:
+        pass
+
+    rendered_html = _render_html_with_browser(feed_url)
+    rendered_text = _render_text_with_browser(feed_url)
+    return {
+        "status_code": status_code,
+        "content_type": content_type,
+        "source_text": source_text,
+        "rendered_html": rendered_html,
+        "rendered_text": rendered_text,
+    }
 
 
 def parse_focus_categories(raw: str | None) -> list[str]:

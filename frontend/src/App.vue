@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Activity, AlertTriangle, BarChart3, Bot, Boxes, CheckCircle2, FileText, Megaphone, PackageSearch, Plus, RefreshCw, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
+import { Activity, AlertTriangle, BarChart3, Bot, Boxes, CheckCircle2, FileText, Megaphone, PackageSearch, Plus, RefreshCw, Search, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
 import { api } from './api'
 
 type Project = {
@@ -220,8 +220,8 @@ const settingsEditor = reactive({
   ozon_feed_url: '',
   wildberries_feed_url: '',
   yandex_market_feed_url: '',
-  marketplace_demo_mode: 'false',
-  auto_posting_enabled: 'false',
+  marketplace_demo_mode: false,
+  auto_posting_enabled: false,
   import_interval_minutes: 30,
   publish_interval_minutes: 5,
   telethon_api_id: 0,
@@ -286,12 +286,15 @@ const parserState = computed(() => {
   const wb = settingMap('wildberries_feed_url')
   const ym = settingMap('yandex_market_feed_url')
   const demo = settingMap('marketplace_demo_mode') === 'true'
+  const projectFeedCount = projects.value.filter((project) => parseFeedConfig(project.feed_config_json).length > 0).length
   return {
     ozon,
     wb,
     ym,
     demo,
-    configured: Boolean(ozon || wb || ym),
+    projectFeedCount,
+    globalConfigured: Boolean(ozon || wb || ym),
+    configured: Boolean(ozon || wb || ym || projectFeedCount),
   }
 })
 
@@ -324,9 +327,69 @@ const feedPresetLabels: Record<string, { title: string; note: string }> = {
   },
 }
 
+const FEED_SEARCH_ALIASES: Record<string, string> = {
+  bedding: 'постельное белье',
+  lamps: 'лампа',
+  organizers: 'органайзер',
+  tableware: 'посуда',
+  protein: 'протеин',
+  vitamins: 'витамины',
+  creatine: 'креатин',
+  'omega-3': 'омега 3',
+  sneakers: 'кроссовки',
+  apparel: 'одежда',
+  streetwear: 'streetwear',
+  laptops: 'ноутбук',
+  monitors: 'монитор',
+  keyboards: 'клавиатура',
+  mice: 'мышь',
+  components: 'комплектующие',
+  headphones: 'наушники',
+  headset: 'гарнитура',
+  accessories: 'аксессуары',
+  'pc-case': 'корпус',
+  'computer-case': 'корпус',
+  'power-supply': 'блок питания',
+  motherboard: 'материнская плата',
+  'graphics-card': 'видеокарта',
+  ssd: 'ssd',
+  ram: 'оперативная память',
+}
+
+function marketplaceSearchQuery(category: string) {
+  const tokens = category
+    .replace(/[\n|;]/g, ',')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const mapped = tokens.map((token) => FEED_SEARCH_ALIASES[token.toLowerCase()] || token)
+  return [...new Set(mapped)].join(' ').trim()
+}
+
+function parseBooleanSetting(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') return value
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  return ['1', 'true', 'yes', 'on'].includes(normalized)
+}
+
 function projectName(projectId?: number | null) {
   if (!projectId) return 'Без проекта'
   return projects.value.find((item) => item.id === projectId)?.name || `Проект #${projectId}`
+}
+
+function buildMarketplaceSearchUrl(marketplace: FeedEditorRow['marketplace'], category: string) {
+  const query = marketplaceSearchQuery(category)
+  if (marketplace === 'ozon') {
+    return query ? `https://www.ozon.ru/search/?text=${encodeURIComponent(query)}` : 'https://www.ozon.ru/'
+  }
+  if (marketplace === 'wildberries') {
+    return query ? `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(query)}` : 'https://www.wildberries.ru/'
+  }
+  if (marketplace === 'yandex_market') {
+    return query ? `https://market.yandex.ru/search?text=${encodeURIComponent(query)}` : 'https://market.yandex.ru/'
+  }
+  return ''
 }
 
 function projectFocusCategories(project: Project): string[] {
@@ -385,11 +448,21 @@ function applyFeedPreset(projectId: number) {
     ? categories.map((category, index) => ({
         marketplace: defaultMarketplaceOrder[index % defaultMarketplaceOrder.length],
         category,
-        url: '',
+        url: buildMarketplaceSearchUrl(defaultMarketplaceOrder[index % defaultMarketplaceOrder.length], category),
       }))
     : [{ marketplace: 'ozon' as const, category: '', url: '' }]
   feedEditors[projectId] = rows
   notice.value = `Шаблон для ${project.name} готов`
+}
+
+function fillFeedSearchUrl(projectId: number, index: number) {
+  const row = feedEditors[projectId]?.[index]
+  if (!row) return
+  const category = row.category.trim()
+  if (!category && !row.url.trim()) return
+  if (category) {
+    row.url = buildMarketplaceSearchUrl(row.marketplace, category)
+  }
 }
 
 function fillProductEditor(product: Product) {
@@ -425,40 +498,40 @@ function fillAdEditor(request: AdRequest) {
 
 function hydrateSettingsEditors() {
   const map = Object.fromEntries(settings.value.map((item) => [item.key, item.value]))
-  settingsEditor.telegram_bot_token = map.telegram_bot_token || settingsEditor.telegram_bot_token
-  settingsEditor.telegram_bot_username = map.telegram_bot_username || ''
-  settingsEditor.telegram_channel_id = map.telegram_channel_id || ''
-  settingsEditor.telegram_admin_id = map.telegram_admin_id || ''
-  settingsEditor.yookassa_shop_id = map.yookassa_shop_id || ''
-  settingsEditor.yookassa_secret_key = map.yookassa_secret_key || settingsEditor.yookassa_secret_key
-  settingsEditor.yookassa_return_url = map.yookassa_return_url || settingsEditor.yookassa_return_url
-  settingsEditor.cryptobot_api_token = map.cryptobot_api_token || settingsEditor.cryptobot_api_token
-  settingsEditor.cryptobot_asset = map.cryptobot_asset || settingsEditor.cryptobot_asset
-  settingsEditor.text_engine = map.text_engine || settingsEditor.text_engine
-  settingsEditor.openrouter_api_key = map.openrouter_api_key || settingsEditor.openrouter_api_key
-  settingsEditor.openrouter_base_url = map.openrouter_base_url || settingsEditor.openrouter_base_url
-  settingsEditor.openrouter_text_model = map.openrouter_text_model || settingsEditor.openrouter_text_model
-  settingsEditor.openrouter_text_timeout_seconds = Number(map.openrouter_text_timeout_seconds || settingsEditor.openrouter_text_timeout_seconds)
-  settingsEditor.openrouter_text_max_tokens = Number(map.openrouter_text_max_tokens || settingsEditor.openrouter_text_max_tokens)
-  settingsEditor.openrouter_site_url = map.openrouter_site_url || settingsEditor.openrouter_site_url
-  settingsEditor.openrouter_site_name = map.openrouter_site_name || settingsEditor.openrouter_site_name
-  settingsEditor.image_engine = map.image_engine || settingsEditor.image_engine
-  settingsEditor.codex_sale_api_key = map.codex_sale_api_key || settingsEditor.codex_sale_api_key
-  settingsEditor.codex_sale_base_url = map.codex_sale_base_url || settingsEditor.codex_sale_base_url
-  settingsEditor.codex_sale_image_model = map.codex_sale_image_model || settingsEditor.codex_sale_image_model
-  settingsEditor.codex_sale_image_size = map.codex_sale_image_size || settingsEditor.codex_sale_image_size
-  settingsEditor.codex_sale_timeout_seconds = Number(map.codex_sale_timeout_seconds || settingsEditor.codex_sale_timeout_seconds)
-  settingsEditor.image_generation_mode = map.image_generation_mode || settingsEditor.image_generation_mode
-  settingsEditor.ozon_feed_url = map.ozon_feed_url || ''
-  settingsEditor.wildberries_feed_url = map.wildberries_feed_url || ''
-  settingsEditor.yandex_market_feed_url = map.yandex_market_feed_url || ''
-  settingsEditor.marketplace_demo_mode = map.marketplace_demo_mode || settingsEditor.marketplace_demo_mode
-  settingsEditor.auto_posting_enabled = map.auto_posting_enabled || settingsEditor.auto_posting_enabled
-  settingsEditor.import_interval_minutes = Number(map.import_interval_minutes || settingsEditor.import_interval_minutes)
-  settingsEditor.publish_interval_minutes = Number(map.publish_interval_minutes || settingsEditor.publish_interval_minutes)
-  settingsEditor.telethon_api_id = Number(map.telethon_api_id || settingsEditor.telethon_api_id)
-  settingsEditor.telethon_api_hash = map.telethon_api_hash || settingsEditor.telethon_api_hash
-  settingsEditor.telethon_session_name = map.telethon_session_name || settingsEditor.telethon_session_name
+  settingsEditor.telegram_bot_token = map.telegram_bot_token ?? settingsEditor.telegram_bot_token
+  settingsEditor.telegram_bot_username = map.telegram_bot_username ?? ''
+  settingsEditor.telegram_channel_id = map.telegram_channel_id ?? ''
+  settingsEditor.telegram_admin_id = map.telegram_admin_id ?? ''
+  settingsEditor.yookassa_shop_id = map.yookassa_shop_id ?? ''
+  settingsEditor.yookassa_secret_key = map.yookassa_secret_key ?? settingsEditor.yookassa_secret_key
+  settingsEditor.yookassa_return_url = map.yookassa_return_url ?? settingsEditor.yookassa_return_url
+  settingsEditor.cryptobot_api_token = map.cryptobot_api_token ?? settingsEditor.cryptobot_api_token
+  settingsEditor.cryptobot_asset = map.cryptobot_asset ?? settingsEditor.cryptobot_asset
+  settingsEditor.text_engine = map.text_engine ?? settingsEditor.text_engine
+  settingsEditor.openrouter_api_key = map.openrouter_api_key ?? settingsEditor.openrouter_api_key
+  settingsEditor.openrouter_base_url = map.openrouter_base_url ?? settingsEditor.openrouter_base_url
+  settingsEditor.openrouter_text_model = map.openrouter_text_model ?? settingsEditor.openrouter_text_model
+  settingsEditor.openrouter_text_timeout_seconds = Number(map.openrouter_text_timeout_seconds ?? settingsEditor.openrouter_text_timeout_seconds)
+  settingsEditor.openrouter_text_max_tokens = Number(map.openrouter_text_max_tokens ?? settingsEditor.openrouter_text_max_tokens)
+  settingsEditor.openrouter_site_url = map.openrouter_site_url ?? settingsEditor.openrouter_site_url
+  settingsEditor.openrouter_site_name = map.openrouter_site_name ?? settingsEditor.openrouter_site_name
+  settingsEditor.image_engine = map.image_engine ?? settingsEditor.image_engine
+  settingsEditor.codex_sale_api_key = map.codex_sale_api_key ?? settingsEditor.codex_sale_api_key
+  settingsEditor.codex_sale_base_url = map.codex_sale_base_url ?? settingsEditor.codex_sale_base_url
+  settingsEditor.codex_sale_image_model = map.codex_sale_image_model ?? settingsEditor.codex_sale_image_model
+  settingsEditor.codex_sale_image_size = map.codex_sale_image_size ?? settingsEditor.codex_sale_image_size
+  settingsEditor.codex_sale_timeout_seconds = Number(map.codex_sale_timeout_seconds ?? settingsEditor.codex_sale_timeout_seconds)
+  settingsEditor.image_generation_mode = map.image_generation_mode ?? settingsEditor.image_generation_mode
+  settingsEditor.ozon_feed_url = map.ozon_feed_url ?? ''
+  settingsEditor.wildberries_feed_url = map.wildberries_feed_url ?? ''
+  settingsEditor.yandex_market_feed_url = map.yandex_market_feed_url ?? ''
+  settingsEditor.marketplace_demo_mode = parseBooleanSetting(map.marketplace_demo_mode, settingsEditor.marketplace_demo_mode)
+  settingsEditor.auto_posting_enabled = parseBooleanSetting(map.auto_posting_enabled, settingsEditor.auto_posting_enabled)
+  settingsEditor.import_interval_minutes = Number(map.import_interval_minutes ?? settingsEditor.import_interval_minutes)
+  settingsEditor.publish_interval_minutes = Number(map.publish_interval_minutes ?? settingsEditor.publish_interval_minutes)
+  settingsEditor.telethon_api_id = Number(map.telethon_api_id ?? settingsEditor.telethon_api_id)
+  settingsEditor.telethon_api_hash = map.telethon_api_hash ?? settingsEditor.telethon_api_hash
+  settingsEditor.telethon_session_name = map.telethon_session_name ?? settingsEditor.telethon_session_name
 }
 
 function normalizeMarketplace(value: unknown): FeedEditorRow['marketplace'] {
@@ -481,7 +554,7 @@ function parseFeedConfig(raw?: string | null): FeedEditorRow[] {
           category: String(item.category || item.label || ''),
           url: String(item.url || item.feed_url || ''),
         }))
-        .filter((item) => item.url.trim())
+        .filter((item) => item.url.trim() || item.category.trim())
     }
     if (parsed && typeof parsed === 'object') {
       return Object.entries(parsed as Record<string, unknown>).flatMap(([marketplace, value]) => {
@@ -498,7 +571,7 @@ function parseFeedConfig(raw?: string | null): FeedEditorRow[] {
           return [{ marketplace: normalized, category: String(item.category || item.label || ''), url: String(item.url || item.feed_url || '') }]
         }
         return [{ marketplace: normalized, category: '', url: String(value || '') }]
-      }).filter((item) => item.url.trim())
+      }).filter((item) => item.url.trim() || item.category.trim())
     }
     return []
   } catch {
@@ -749,8 +822,8 @@ async function saveOperationalSettings() {
       ozon_feed_url: settingsEditor.ozon_feed_url,
       wildberries_feed_url: settingsEditor.wildberries_feed_url,
       yandex_market_feed_url: settingsEditor.yandex_market_feed_url,
-      marketplace_demo_mode: settingsEditor.marketplace_demo_mode,
-      auto_posting_enabled: settingsEditor.auto_posting_enabled,
+      marketplace_demo_mode: String(settingsEditor.marketplace_demo_mode),
+      auto_posting_enabled: String(settingsEditor.auto_posting_enabled),
       import_interval_minutes: String(settingsEditor.import_interval_minutes),
       publish_interval_minutes: String(settingsEditor.publish_interval_minutes),
       telethon_api_id: String(settingsEditor.telethon_api_id),
@@ -809,9 +882,9 @@ function cleanFeedRows(projectId: number) {
     .map((row) => ({
       marketplace: normalizeMarketplace(row.marketplace),
       category: row.category.trim(),
-      url: row.url.trim(),
+      url: row.url.trim() || (row.category.trim() ? buildMarketplaceSearchUrl(normalizeMarketplace(row.marketplace), row.category) : ''),
     }))
-    .filter((row) => row.url)
+    .filter((row) => row.url || row.category)
 }
 
 async function saveFeeds() {
@@ -831,8 +904,10 @@ async function saveFeeds() {
 
 async function testFeed(projectId: number, index: number) {
   const row = feedEditors[projectId]?.[index]
-  if (!row?.url?.trim()) {
-    feedTests[feedKey(projectId, index)] = { loading: false, ok: false, count: 0, error: 'Сначала вставь URL фида', items: [] }
+  const category = row?.category?.trim() || ''
+  const feedUrl = row ? row.url.trim() || (category ? buildMarketplaceSearchUrl(row.marketplace, category) : '') : ''
+  if (!feedUrl) {
+    feedTests[feedKey(projectId, index)] = { loading: false, ok: false, count: 0, error: 'Сначала укажи фид или категорию', items: [] }
     return
   }
   const key = feedKey(projectId, index)
@@ -841,7 +916,7 @@ async function testFeed(projectId: number, index: number) {
     const result = await api.testFeed({
       marketplace: row.marketplace,
       category: row.category,
-      url: row.url,
+      url: feedUrl,
       limit: 8,
     })
     feedTests[key] = {
@@ -1232,7 +1307,10 @@ onMounted(reloadAll)
           <div class="list">
             <div v-for="project in projects" :key="project.id" class="settings-card">
               <div class="settings-card-head">
-                <strong>{{ project.name }}</strong>
+                <div>
+                  <strong>{{ project.name }}</strong>
+                  <span class="project-feed-note">{{ feedPresetLabels[project.slug]?.note || 'Набор категорий проекта и фидов под него.' }}</span>
+                </div>
                 <div class="row-actions">
                   <button class="ghost small-button" type="button" @click="applyFeedPreset(project.id)"><Boxes />Шаблон</button>
                   <button class="ghost small-button" type="button" @click="addFeed(project.id)"><Plus />Добавить фид</button>
@@ -1256,30 +1334,33 @@ onMounted(reloadAll)
                   <label>
                     <span>Категория</span>
                     <input v-model="feed.category" placeholder="Обувь, одежда, ПК..." />
-                    <p class="help-text">Можно указать несколько категорий через запятую.</p>
+                    <p class="help-text">Можно указать несколько категорий через запятую. Если URL пустой, он соберётся автоматически.</p>
                   </label>
                   <label class="feed-url-field">
                     <span>Feed / category URL</span>
                     <input v-model="feed.url" placeholder="https://www.ozon.ru/category/..." />
                   </label>
+                  <button class="ghost small-button" type="button" @click="fillFeedSearchUrl(project.id, index)">
+                    <Search />Поиск
+                  </button>
                   <button class="ghost small-button" type="button" :disabled="feedTests[feedKey(project.id, index)]?.loading" @click="testFeed(project.id, index)">
                     {{ feedTests[feedKey(project.id, index)]?.loading ? 'Проверка' : 'Проверить' }}
                   </button>
                   <button class="ghost icon-button danger-button" type="button" @click="removeFeed(project.id, index)" title="Удалить фид"><Trash2 /></button>
-                  <div v-if="feedTests[feedKey(project.id, index)]" class="feed-test-result" :class="{ 'feed-test-ok': feedTests[feedKey(project.id, index)]?.ok, 'feed-test-bad': feedTests[feedKey(project.id, index)]?.ok === false }">
-                    <strong>{{ feedTests[feedKey(project.id, index)]?.ok ? `Найдено: ${feedTests[feedKey(project.id, index)]?.count}` : 'Фид не дал товары' }}</strong>
-                    <span v-if="feedTests[feedKey(project.id, index)]?.error">{{ feedTests[feedKey(project.id, index)]?.error }}</span>
-                    <ul v-if="feedTests[feedKey(project.id, index)]?.items?.length">
-                      <li v-for="item in feedTests[feedKey(project.id, index)]?.items" :key="`${item.title}-${item.price}`">{{ item.title }} · {{ Number(item.price || 0).toLocaleString('ru-RU') }} ₽</li>
-                    </ul>
-                  </div>
+              <div v-if="feedTests[feedKey(project.id, index)]" class="feed-test-result" :class="{ 'feed-test-ok': feedTests[feedKey(project.id, index)]?.ok, 'feed-test-bad': feedTests[feedKey(project.id, index)]?.ok === false }">
+                <strong>{{ feedTests[feedKey(project.id, index)]?.ok ? `Найдено: ${feedTests[feedKey(project.id, index)]?.count}` : 'Фид не дал товары' }}</strong>
+                <span v-if="feedTests[feedKey(project.id, index)]?.error">{{ feedTests[feedKey(project.id, index)]?.error }}</span>
+                <ul v-if="feedTests[feedKey(project.id, index)]?.items?.length">
+                  <li v-for="item in feedTests[feedKey(project.id, index)]?.items" :key="`${item.title}-${item.price}`">{{ item.title }} · {{ Number(item.price || 0).toLocaleString('ru-RU') }} ₽</li>
+                </ul>
+              </div>
                 </div>
               </div>
               <div v-else class="empty-feed">
                 <span>Фидов пока нет</span>
                 <button class="primary" type="button" @click="addFeed(project.id)"><Plus />Добавить первый фид</button>
               </div>
-              <p class="help-text">Можно вставлять готовый фид, ссылку на категорию или подкатегорию. Если здесь пусто, система возьмёт глобальный фид из настроек.</p>
+              <p class="help-text">Можно вставлять готовый фид, ссылку на категорию или просто назвать категорию. Пустой URL соберётся автоматически, а глобальный фид из настроек останется fallback-ом.</p>
             </div>
           </div>
           <div class="toggle-row">
@@ -1427,8 +1508,8 @@ onMounted(reloadAll)
             <label><span>Ozon feed URL</span><input v-model="settingsEditor.ozon_feed_url" /></label>
             <label><span>Wildberries feed URL</span><input v-model="settingsEditor.wildberries_feed_url" /></label>
             <label><span>Yandex Market feed URL</span><input v-model="settingsEditor.yandex_market_feed_url" /></label>
-            <label><span>Demo mode</span><input v-model="settingsEditor.marketplace_demo_mode" /></label>
-            <label><span>Auto posting</span><input v-model="settingsEditor.auto_posting_enabled" /></label>
+            <label class="inline-check"><input v-model="settingsEditor.marketplace_demo_mode" type="checkbox" /><span>Demo mode</span></label>
+            <label class="inline-check"><input v-model="settingsEditor.auto_posting_enabled" type="checkbox" /><span>Auto posting</span></label>
             <label><span>Import interval</span><input v-model.number="settingsEditor.import_interval_minutes" type="number" /></label>
             <label><span>Publish interval</span><input v-model.number="settingsEditor.publish_interval_minutes" type="number" /></label>
             <label><span>Telethon API ID</span><input v-model.number="settingsEditor.telethon_api_id" type="number" /></label>
@@ -1470,8 +1551,12 @@ onMounted(reloadAll)
           </div>
           <div class="parser-state" :class="{ 'parser-state-warn': !parserState.configured }">
             <div>
-              <span>Состояние парсера</span>
-              <strong>{{ parserState.configured ? 'Фиды подключены' : 'Фиды не заданы' }}</strong>
+              <span>Глобальные URL</span>
+              <strong>{{ parserState.globalConfigured ? 'заданы' : 'пусто' }}</strong>
+            </div>
+            <div>
+              <span>Проектные фиды</span>
+              <strong>{{ parserState.projectFeedCount }} проектов</strong>
             </div>
             <div>
               <span>Demo mode</span>
@@ -1479,8 +1564,8 @@ onMounted(reloadAll)
             </div>
             <p>
               {{ parserState.configured
-                ? 'Импорт берёт только реальные фиды. Demo-карточки не подставляются.'
-                : 'Если фиды Ozon / Wildberries / Yandex Market не заполнены, импорт не будет подсовывать фейковые товары.' }}
+                ? 'Глобальные адреса используются как fallback. Проектные фиды и категории задавай на вкладке «Фиды».'
+                : 'Фиды и категории задаются на вкладке «Фиды». Глобальные ссылки здесь нужны только как запасной вариант.' }}
             </p>
           </div>
         </div>
