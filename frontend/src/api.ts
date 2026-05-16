@@ -51,6 +51,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  inspectFeed: (payload: Record<string, unknown>) => request('/feeds/inspect', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   referrals: (projectId?: number | null) => request('/referrals', undefined, projectId),
   published: (projectId?: number | null) => request('/published', undefined, projectId),
   syncStatus: (projectId?: number | null) => request('/sync-status', undefined, projectId),

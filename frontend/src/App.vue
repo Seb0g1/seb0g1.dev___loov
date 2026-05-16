@@ -143,6 +143,19 @@ type FeedTestState = {
   items?: Array<{ title: string; price: number; url?: string | null }>
 }
 
+type FeedInspectState = {
+  loading: boolean
+  ok?: boolean
+  resolved_url?: string
+  status_code?: number
+  content_type?: string
+  blocked?: boolean
+  error?: string | null
+  source_text?: string
+  rendered_html?: string
+  rendered_text?: string
+}
+
 type DiagnosticItem = {
   label: string
   ok: boolean
@@ -237,6 +250,7 @@ const channelEditors = reactive<Record<number, {
 
 const feedEditors = reactive<Record<number, FeedEditorRow[]>>({})
 const feedTests = reactive<Record<string, FeedTestState>>({})
+const feedInspections = reactive<Record<string, FeedInspectState>>({})
 
 const productEditor = reactive({
   title: '',
@@ -871,10 +885,62 @@ function addFeed(projectId: number) {
 
 function removeFeed(projectId: number, index: number) {
   feedEditors[projectId]?.splice(index, 1)
+  delete feedTests[feedKey(projectId, index)]
+  delete feedInspections[feedKey(projectId, index)]
 }
 
 function feedKey(projectId: number, index: number) {
   return `${projectId}:${index}`
+}
+
+function resolveFeedUrl(row?: FeedEditorRow | null) {
+  if (!row) return ''
+  const category = row.category.trim()
+  return row.url.trim() || (category ? buildMarketplaceSearchUrl(row.marketplace, category) : '')
+}
+
+function compactFeedSnippet(value?: string | null) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 520)
+}
+
+function feedInspectionSnippet(state?: FeedInspectState) {
+  if (!state) return ''
+  return compactFeedSnippet(state.rendered_text || state.source_text || state.rendered_html)
+}
+
+function feedInspectionBlocked(state?: FeedInspectState) {
+  const blob = `${state?.source_text || ''} ${state?.rendered_text || ''} ${state?.rendered_html || ''}`.toLowerCase()
+  return Boolean(
+    state?.blocked ||
+    blob.includes('antibot challenge') ||
+    blob.includes('challenge-data') ||
+    blob.includes('captcha') ||
+    blob.includes('без javascript') ||
+    blob.includes('похоже, вы используете vpn') ||
+    blob.includes('access denied')
+  )
+}
+
+function feedInspectionHint(state?: FeedInspectState) {
+  if (!state) return ''
+  if (state.error) return state.error
+  if (feedInspectionBlocked(state)) return 'Маркетплейс открыл антибот или ограничил запрос. Для продакшена лучше подключить официальный партнерский/выгрузочный фид или proxy-render.'
+  if (state.status_code && state.status_code >= 400) return `Источник ответил HTTP ${state.status_code}. Проверь URL или доступность страницы.`
+  if (!feedInspectionSnippet(state)) return 'Ответ пустой или страница не отрендерилась. Попробуй другой URL категории или поисковую ссылку.'
+  return 'Ответ получен. Если товары не импортируются, смотри разметку страницы или используй готовый XML/JSON фид.'
+}
+
+function feedInspectionOk(state?: FeedInspectState) {
+  const statusCode = Number(state?.status_code || 0)
+  return Boolean(state && !feedInspectionBlocked(state) && statusCode > 0 && statusCode < 400)
+}
+
+function feedInspectionBad(state?: FeedInspectState) {
+  const statusCode = Number(state?.status_code || 0)
+  return Boolean(feedInspectionBlocked(state) || statusCode >= 400 || state?.error)
 }
 
 function cleanFeedRows(projectId: number) {
@@ -882,7 +948,7 @@ function cleanFeedRows(projectId: number) {
     .map((row) => ({
       marketplace: normalizeMarketplace(row.marketplace),
       category: row.category.trim(),
-      url: row.url.trim() || (row.category.trim() ? buildMarketplaceSearchUrl(normalizeMarketplace(row.marketplace), row.category) : ''),
+      url: resolveFeedUrl(row),
     }))
     .filter((row) => row.url || row.category)
 }
@@ -904,8 +970,7 @@ async function saveFeeds() {
 
 async function testFeed(projectId: number, index: number) {
   const row = feedEditors[projectId]?.[index]
-  const category = row?.category?.trim() || ''
-  const feedUrl = row ? row.url.trim() || (category ? buildMarketplaceSearchUrl(row.marketplace, category) : '') : ''
+  const feedUrl = resolveFeedUrl(row)
   if (!feedUrl) {
     feedTests[feedKey(projectId, index)] = { loading: false, ok: false, count: 0, error: 'Сначала укажи фид или категорию', items: [] }
     return
@@ -928,6 +993,39 @@ async function testFeed(projectId: number, index: number) {
     }
   } catch (error: any) {
     feedTests[key] = { loading: false, ok: false, count: 0, error: error?.message || String(error), items: [] }
+  }
+}
+
+async function inspectFeed(projectId: number, index: number) {
+  const row = feedEditors[projectId]?.[index]
+  const feedUrl = resolveFeedUrl(row)
+  if (!feedUrl) {
+    feedInspections[feedKey(projectId, index)] = { loading: false, ok: false, error: 'Сначала укажи фид или категорию' }
+    return
+  }
+  const key = feedKey(projectId, index)
+  feedInspections[key] = { loading: true, resolved_url: feedUrl }
+  try {
+    const result = await api.inspectFeed({
+      marketplace: row.marketplace,
+      category: row.category,
+      url: feedUrl,
+      limit: 1,
+    })
+    feedInspections[key] = {
+      loading: false,
+      ok: Boolean(result.ok),
+      resolved_url: result.resolved_url || feedUrl,
+      status_code: Number(result.status_code || 0),
+      content_type: result.content_type || '',
+      blocked: Boolean(result.blocked),
+      error: result.error || null,
+      source_text: result.source_text || '',
+      rendered_html: result.rendered_html || '',
+      rendered_text: result.rendered_text || '',
+    }
+  } catch (error: any) {
+    feedInspections[key] = { loading: false, ok: false, resolved_url: feedUrl, error: error?.message || String(error) }
   }
 }
 
@@ -1340,20 +1438,36 @@ onMounted(reloadAll)
                     <span>Feed / category URL</span>
                     <input v-model="feed.url" placeholder="https://www.ozon.ru/category/..." />
                   </label>
-                  <button class="ghost small-button" type="button" @click="fillFeedSearchUrl(project.id, index)">
-                    <Search />Поиск
-                  </button>
-                  <button class="ghost small-button" type="button" :disabled="feedTests[feedKey(project.id, index)]?.loading" @click="testFeed(project.id, index)">
-                    {{ feedTests[feedKey(project.id, index)]?.loading ? 'Проверка' : 'Проверить' }}
-                  </button>
-                  <button class="ghost icon-button danger-button" type="button" @click="removeFeed(project.id, index)" title="Удалить фид"><Trash2 /></button>
-              <div v-if="feedTests[feedKey(project.id, index)]" class="feed-test-result" :class="{ 'feed-test-ok': feedTests[feedKey(project.id, index)]?.ok, 'feed-test-bad': feedTests[feedKey(project.id, index)]?.ok === false }">
-                <strong>{{ feedTests[feedKey(project.id, index)]?.ok ? `Найдено: ${feedTests[feedKey(project.id, index)]?.count}` : 'Фид не дал товары' }}</strong>
-                <span v-if="feedTests[feedKey(project.id, index)]?.error">{{ feedTests[feedKey(project.id, index)]?.error }}</span>
-                <ul v-if="feedTests[feedKey(project.id, index)]?.items?.length">
-                  <li v-for="item in feedTests[feedKey(project.id, index)]?.items" :key="`${item.title}-${item.price}`">{{ item.title }} · {{ Number(item.price || 0).toLocaleString('ru-RU') }} ₽</li>
-                </ul>
-              </div>
+                  <div class="feed-actions">
+                    <button class="ghost small-button" type="button" @click="fillFeedSearchUrl(project.id, index)">
+                      <Search />Поиск
+                    </button>
+                    <button class="ghost small-button" type="button" :disabled="feedTests[feedKey(project.id, index)]?.loading" @click="testFeed(project.id, index)">
+                      {{ feedTests[feedKey(project.id, index)]?.loading ? 'Проверка' : 'Проверить' }}
+                    </button>
+                    <button class="ghost small-button" type="button" :disabled="feedInspections[feedKey(project.id, index)]?.loading" @click="inspectFeed(project.id, index)">
+                      <Activity />{{ feedInspections[feedKey(project.id, index)]?.loading ? 'Смотрю' : 'Диагн.' }}
+                    </button>
+                    <button class="ghost icon-button danger-button" type="button" @click="removeFeed(project.id, index)" title="Удалить фид"><Trash2 /></button>
+                  </div>
+                  <div v-if="feedTests[feedKey(project.id, index)]" class="feed-test-result" :class="{ 'feed-test-ok': feedTests[feedKey(project.id, index)]?.ok, 'feed-test-bad': feedTests[feedKey(project.id, index)]?.ok === false }">
+                    <strong>{{ feedTests[feedKey(project.id, index)]?.ok ? `Найдено: ${feedTests[feedKey(project.id, index)]?.count}` : 'Фид не дал товары' }}</strong>
+                    <span v-if="feedTests[feedKey(project.id, index)]?.error">{{ feedTests[feedKey(project.id, index)]?.error }}</span>
+                    <ul v-if="feedTests[feedKey(project.id, index)]?.items?.length">
+                      <li v-for="item in feedTests[feedKey(project.id, index)]?.items" :key="`${item.title}-${item.price}`">{{ item.title }} · {{ Number(item.price || 0).toLocaleString('ru-RU') }} ₽</li>
+                    </ul>
+                  </div>
+                  <div v-if="feedInspections[feedKey(project.id, index)]" class="feed-test-result feed-inspect-result" :class="{ 'feed-test-ok': feedInspectionOk(feedInspections[feedKey(project.id, index)]), 'feed-test-bad': feedInspectionBad(feedInspections[feedKey(project.id, index)]) }">
+                    <strong>Диагностика источника</strong>
+                    <div class="feed-debug-grid">
+                      <span>HTTP: {{ feedInspections[feedKey(project.id, index)]?.status_code || 'нет' }}</span>
+                      <span>{{ feedInspections[feedKey(project.id, index)]?.content_type || 'content-type пустой' }}</span>
+                      <span>{{ feedInspectionBlocked(feedInspections[feedKey(project.id, index)]) ? 'антибот / блокировка' : 'блокировка не найдена' }}</span>
+                    </div>
+                    <span v-if="feedInspections[feedKey(project.id, index)]?.resolved_url" class="feed-url-preview">{{ feedInspections[feedKey(project.id, index)]?.resolved_url }}</span>
+                    <span>{{ feedInspectionHint(feedInspections[feedKey(project.id, index)]) }}</span>
+                    <pre v-if="feedInspectionSnippet(feedInspections[feedKey(project.id, index)])">{{ feedInspectionSnippet(feedInspections[feedKey(project.id, index)]) }}</pre>
+                  </div>
                 </div>
               </div>
               <div v-else class="empty-feed">

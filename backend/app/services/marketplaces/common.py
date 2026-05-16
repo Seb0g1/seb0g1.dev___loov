@@ -737,29 +737,40 @@ def fetch_json_feed(source: str, feed_url: str | None, limit: int = 20, category
     return []
 
 
-def inspect_feed_source(feed_url: str | None) -> dict[str, str | int]:
+def inspect_feed_source(feed_url: str | None) -> dict[str, str | int | bool]:
     if not feed_url:
-        return {"status_code": 0, "content_type": "", "source_text": "", "rendered_html": "", "rendered_text": ""}
+        return {
+            "status_code": 0,
+            "content_type": "",
+            "source_text": "",
+            "rendered_html": "",
+            "rendered_text": "",
+            "blocked": False,
+        }
 
     status_code = 0
     content_type = ""
     source_text = ""
+    blocked = False
     try:
         response = httpx.get(feed_url, timeout=30, follow_redirects=True, headers=DEFAULT_HEADERS)
         status_code = response.status_code
         content_type = response.headers.get("content-type", "")
         source_text = response.text
+        blocked = status_code in {401, 403, 429, 498} or _looks_like_antibot_page(source_text)
     except Exception:
         pass
 
     rendered_html = _render_html_with_browser(feed_url)
     rendered_text = _render_text_with_browser(feed_url)
+    blocked = blocked or _looks_like_antibot_page(rendered_html) or _looks_like_antibot_page(rendered_text)
     return {
         "status_code": status_code,
         "content_type": content_type,
         "source_text": source_text,
         "rendered_html": rendered_html,
         "rendered_text": rendered_text,
+        "blocked": blocked,
     }
 
 

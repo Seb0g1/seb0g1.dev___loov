@@ -93,6 +93,18 @@ def _build_marketplace_search_url(marketplace: Any, category: Any = "") -> str:
     return ""
 
 
+def resolve_marketplace_feed_url(marketplace: Any, feed_url: Any = "", category: Any = "") -> str:
+    normalized_feed_url = str(feed_url or "").strip()
+    if normalized_feed_url:
+        return normalized_feed_url
+
+    normalized_marketplace = _normalize_marketplace(marketplace)
+    search_query = _marketplace_search_query(category)
+    if not normalized_marketplace or not search_query:
+        return ""
+    return _build_marketplace_search_url(normalized_marketplace, category)
+
+
 def _split_categories(value: Any) -> list[str]:
     if value in (None, ""):
         return []
@@ -122,8 +134,7 @@ def _feed_entries(marketplace: Any, url: Any, category: Any = "") -> list[dict[s
     if not normalized_marketplace:
         return []
     categories = _split_categories(category) or [""]
-    search_query = _marketplace_search_query(category)
-    search_url = normalized_url or (_build_marketplace_search_url(normalized_marketplace, category) if search_query else "")
+    search_url = resolve_marketplace_feed_url(normalized_marketplace, normalized_url, category)
     if not search_url:
         return []
     return [
@@ -212,8 +223,7 @@ def test_marketplace_feed(marketplace: str, feed_url: str, category: str | None 
     fetcher = FETCHERS.get(normalized_marketplace)
     if not fetcher:
         raise ValueError("Unknown marketplace")
-    search_query = _marketplace_search_query(category)
-    normalized_feed_url = str(feed_url or "").strip() or (_build_marketplace_search_url(normalized_marketplace, category) if search_query else "")
+    normalized_feed_url = resolve_marketplace_feed_url(normalized_marketplace, feed_url, category)
     if not normalized_feed_url:
         return []
     categories = _split_categories(category)

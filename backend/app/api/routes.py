@@ -52,7 +52,7 @@ from app.services.advertising import (
 from app.services.dedup import build_dedup_key
 from app.services.drafts import create_draft_from_product, product_to_payload, regenerate_draft
 from app.services.importer import import_products
-from app.services.marketplaces.collector import global_feed_entries, project_feed_entries, test_marketplace_feed
+from app.services.marketplaces.collector import global_feed_entries, project_feed_entries, resolve_marketplace_feed_url, test_marketplace_feed
 from app.services.marketplaces.common import inspect_feed_source
 from app.services.publishing import publish_draft
 from app.services.review_actions import process_draft_decision
@@ -367,11 +367,26 @@ def test_feed(payload: FeedTestRequest):
 
 @router.post("/feeds/inspect")
 def inspect_feed(payload: FeedTestRequest):
-    debug = inspect_feed_source(payload.url)
+    resolved_url = resolve_marketplace_feed_url(payload.marketplace, payload.url, payload.category)
+    if not resolved_url:
+        return {
+            "ok": False,
+            "error": "Укажи URL фида или категорию для автопоиска",
+            "resolved_url": "",
+            "status_code": 0,
+            "content_type": "",
+            "blocked": False,
+            "source_text": "",
+            "rendered_html": "",
+            "rendered_text": "",
+        }
+    debug = inspect_feed_source(resolved_url)
     return {
         "ok": True,
+        "resolved_url": resolved_url,
         "status_code": debug["status_code"],
         "content_type": debug["content_type"],
+        "blocked": debug["blocked"],
         "source_text": str(debug["source_text"])[:2000],
         "rendered_html": str(debug["rendered_html"])[:2000],
         "rendered_text": str(debug["rendered_text"])[:2000],
