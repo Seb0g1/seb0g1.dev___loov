@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 from app.services.marketplaces.common import parse_focus_categories, product_matches_focus
 from app.services.marketplaces.demo import get_demo_products
@@ -97,12 +97,28 @@ def _build_marketplace_search_url(marketplace: Any, category: Any = "") -> str:
     return ""
 
 
+def _query_from_feed_url(feed_url: str) -> str:
+    try:
+        params = parse_qs(urlparse(feed_url).query)
+    except Exception:
+        return ""
+    for key in ("query", "search", "text"):
+        values = params.get(key)
+        if values and str(values[0]).strip():
+            return str(values[0]).strip()
+    return ""
+
+
 def resolve_marketplace_feed_url(marketplace: Any, feed_url: Any = "", category: Any = "") -> str:
+    normalized_marketplace = _normalize_marketplace(marketplace)
     normalized_feed_url = str(feed_url or "").strip()
     if normalized_feed_url:
+        if normalized_marketplace == "wildberries":
+            query = _query_from_feed_url(normalized_feed_url) or _marketplace_search_query(category)
+            if query:
+                return _build_marketplace_search_url(normalized_marketplace, query)
         return normalized_feed_url
 
-    normalized_marketplace = _normalize_marketplace(marketplace)
     search_query = _marketplace_search_query(category)
     if not normalized_marketplace or not search_query:
         return ""

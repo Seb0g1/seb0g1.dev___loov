@@ -410,6 +410,24 @@ function buildMarketplaceSearchUrl(marketplace: FeedEditorRow['marketplace'], ca
   return ''
 }
 
+function feedQueryFromUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    return parsed.searchParams.get('query') || parsed.searchParams.get('search') || parsed.searchParams.get('text') || ''
+  } catch {
+    return ''
+  }
+}
+
+function normalizedFeedUrl(marketplace: FeedEditorRow['marketplace'], url: string, category: string) {
+  const trimmedUrl = url.trim()
+  if (marketplace === 'wildberries' && trimmedUrl) {
+    const query = feedQueryFromUrl(trimmedUrl) || category
+    if (query.trim()) return buildMarketplaceSearchUrl(marketplace, query)
+  }
+  return trimmedUrl || (category.trim() ? buildMarketplaceSearchUrl(marketplace, category) : '')
+}
+
 function projectFocusCategories(project: Project): string[] {
   if (!project.category_focus_json) return []
   const raw = project.category_focus_json.trim()
@@ -567,28 +585,34 @@ function parseFeedConfig(raw?: string | null): FeedEditorRow[] {
     if (Array.isArray(parsed)) {
       return parsed
         .filter((item) => item && typeof item === 'object')
-        .map((item: any) => ({
-          marketplace: normalizeMarketplace(item.marketplace || item.source),
-          category: String(item.category || item.label || ''),
-          url: String(item.url || item.feed_url || ''),
-        }))
+        .map((item: any) => {
+          const marketplace = normalizeMarketplace(item.marketplace || item.source)
+          const category = String(item.category || item.label || '')
+          return {
+            marketplace,
+            category,
+            url: normalizedFeedUrl(marketplace, String(item.url || item.feed_url || ''), category),
+          }
+        })
         .filter((item) => item.url.trim() || item.category.trim())
     }
     if (parsed && typeof parsed === 'object') {
       return Object.entries(parsed as Record<string, unknown>).flatMap(([marketplace, value]) => {
         const normalized = normalizeMarketplace(marketplace)
         if (Array.isArray(value)) {
-          return value.map((item: any) => ({
-            marketplace: normalized,
-            category: typeof item === 'object' && item ? String(item.category || item.label || '') : '',
-            url: typeof item === 'object' && item ? String(item.url || item.feed_url || '') : String(item || ''),
-          }))
+          return value.map((item: any) => {
+            const category = typeof item === 'object' && item ? String(item.category || item.label || '') : ''
+            const url = typeof item === 'object' && item ? String(item.url || item.feed_url || '') : String(item || '')
+            return { marketplace: normalized, category, url: normalizedFeedUrl(normalized, url, category) }
+          })
         }
         if (value && typeof value === 'object') {
           const item = value as Record<string, unknown>
-          return [{ marketplace: normalized, category: String(item.category || item.label || ''), url: String(item.url || item.feed_url || '') }]
+          const category = String(item.category || item.label || '')
+          const url = String(item.url || item.feed_url || '')
+          return [{ marketplace: normalized, category, url: normalizedFeedUrl(normalized, url, category) }]
         }
-        return [{ marketplace: normalized, category: '', url: String(value || '') }]
+        return [{ marketplace: normalized, category: '', url: normalizedFeedUrl(normalized, String(value || ''), '') }]
       }).filter((item) => item.url.trim() || item.category.trim())
     }
     return []
@@ -900,7 +924,7 @@ function feedKey(projectId: number, index: number) {
 function resolveFeedUrl(row?: FeedEditorRow | null) {
   if (!row) return ''
   const category = row.category.trim()
-  return row.url.trim() || (category ? buildMarketplaceSearchUrl(row.marketplace, category) : '')
+  return normalizedFeedUrl(row.marketplace, row.url, category)
 }
 
 function compactFeedSnippet(value?: string | null) {
