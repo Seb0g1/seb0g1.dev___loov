@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.entities import DraftPost, Product, PublishedPost, PublishLog
+from app.services.live_product import refresh_product_live_data
+from app.services.marketplace_links import build_marketplace_buttons, build_marketplace_footer, normalize_marketplace
 from app.services.runtime_config import load_runtime_config
 from app.services.telegram import TelegramPublisher
 
@@ -17,8 +19,36 @@ def build_cta_button(url: str | None) -> list[dict]:
     return [{"text": "Купить", "url": url}]
 
 
+def build_cta_buttons(product: Product | None) -> list[dict]:
+    if not product:
+        return []
+    buttons = build_marketplace_buttons(product)
+    return buttons or build_cta_button(product.url)
+
+
+def build_publish_caption(text: str, product: Product | None) -> str:
+    if not product:
+        return text
+    footer = build_marketplace_footer(product)
+    marker = "<b>Актуальная цена:</b>"
+    body = text.split(marker, 1)[0].rstrip() if marker in text else text.rstrip()
+    return f"{body}\n\n{footer}"
+
+
+def _live_price_verified(product: Product) -> bool:
+    try:
+        data = json.loads(product.characteristics_json or "{}")
+        return bool(data.get("live_price_verified"))
+    except Exception:
+        return False
+
+
 async def publish_draft(db: Session, draft: DraftPost) -> PublishedPost:
     product = db.get(Product, draft.product_id) if draft.product_id else None
+    if product:
+        await refresh_product_live_data(db, product)
+        if normalize_marketplace(product.source) == "yandex_market" and not _live_price_verified(product):
+            raise RuntimeError("Не удалось подтвердить актуальную цену товара на Яндекс Маркете")
     existing = db.scalar(select(PublishedPost).where(PublishedPost.draft_id == draft.id))
     if existing:
         return existing
@@ -26,8 +56,8 @@ async def publish_draft(db: Session, draft: DraftPost) -> PublishedPost:
         existing = db.scalar(select(PublishedPost).where(PublishedPost.product_id == product.id))
         if existing:
             return existing
-    caption = draft.text
-    buttons = build_cta_button(product.url if product else None)
+    caption = build_publish_caption(draft.text, product)
+    buttons = build_cta_buttons(product)
     publisher = TelegramPublisher()
     runtime = load_runtime_config(db)
     channel_id = None

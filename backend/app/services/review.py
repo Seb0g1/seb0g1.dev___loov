@@ -6,6 +6,7 @@ from html import escape
 from sqlalchemy.orm import Session
 
 from app.models.entities import DraftPost
+from app.services.marketplace_links import build_marketplace_footer, format_price_from
 from app.services.runtime_config import load_runtime_config
 from app.services.telegram import TelegramPublisher
 
@@ -32,12 +33,12 @@ def build_review_caption(draft: DraftPost) -> str:
     product = draft.product
     product_line = ""
     if product:
-        price = f"{product.price:,.0f}".replace(",", " ")
-        product_line = f"\n\n<b>{escape(product.title)}</b>\n{escape(product.category)} · {price} ₽"
+        product_line = f"\n\n<b>{escape(product.title)}</b>\n{escape(product.category)} · {format_price_from(product.price)}"
     body = escape(draft.text.strip())
     if len(body) > 650:
         body = f"{body[:650].rstrip()}..."
-    return f"Новый черновик для согласования\n<b>{project_name}</b>{product_line}\n\n{body}"
+    footer = f"\n\n{build_marketplace_footer(product)}" if product else ""
+    return f"Новый черновик для согласования\n<b>{project_name}</b>{product_line}\n\n{body}{footer}"
 
 
 async def send_draft_for_review(db: Session, draft: DraftPost) -> bool:

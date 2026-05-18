@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.models.entities import DraftPost, GenerationLog, Product, Project
 from app.services.generation.image import render_poster
 from app.services.generation.text import generate_text
+from app.services.live_product import refresh_product_live_data
+from app.services.marketplace_links import normalize_marketplace
 
 
 def product_to_payload(product: Product) -> dict:
@@ -52,6 +54,19 @@ def project_to_payload(project: Project | None) -> dict | None:
     }
 
 
+def _live_price_verified(product: Product) -> bool:
+    try:
+        data = json.loads(product.characteristics_json or "{}")
+        return bool(data.get("live_price_verified"))
+    except Exception:
+        return False
+
+
+def _ensure_live_price(product: Product) -> None:
+    if normalize_marketplace(product.source) == "yandex_market" and not _live_price_verified(product):
+        raise RuntimeError("Не удалось подтвердить актуальную цену товара на Яндекс Маркете")
+
+
 def pick_next_product_for_project(db: Session, project_id: int, exclude_product_id: int | None = None) -> Product | None:
     candidates = db.scalars(
         select(Product)
@@ -84,6 +99,8 @@ def pick_next_product_for_project(db: Session, project_id: int, exclude_product_
 
 
 async def create_draft_from_product(db: Session, product: Product, style: str = "short", notify_admin: bool = True) -> DraftPost:
+    await refresh_product_live_data(db, product)
+    _ensure_live_price(product)
     payload = product_to_payload(product)
     project_payload_data = project_to_payload(product.project)
     text_result = await generate_text(payload, style=style, project=project_payload_data)
@@ -136,6 +153,8 @@ async def regenerate_draft(db: Session, draft: DraftPost, regenerate_text: bool 
     product = db.get(Product, draft.product_id) if draft.product_id else None
     if not product:
         return draft
+    await refresh_product_live_data(db, product)
+    _ensure_live_price(product)
     payload = product_to_payload(product)
     project_payload_data = project_to_payload(product.project)
     if regenerate_text:

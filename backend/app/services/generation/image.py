@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import logging
 import tempfile
@@ -10,6 +11,8 @@ import httpx
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from app.core.config import get_settings
+from app.services.live_product import capture_product_screenshot
+from app.services.marketplace_links import format_price_from
 from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
@@ -185,8 +188,7 @@ def _rounded_paste(canvas: Image.Image, image: Image.Image, box: tuple[int, int,
 
 
 def _format_price(value: float | int | None) -> str:
-    amount = float(value or 0)
-    return f"{amount:,.0f} ₽".replace(",", " ")
+    return format_price_from(value)
 
 
 def _format_int(value: float | int | None) -> str:
@@ -271,6 +273,42 @@ def _draw_chip(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text: 
     )
 
 
+def _safe_file_token(value: str | None) -> str:
+    raw = str(value or "product")
+    return hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:18]
+
+
+def _draw_browser_chrome(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], url: str | None) -> None:
+    x1, y1, x2, y2 = box
+    draw.rounded_rectangle(box, radius=30, fill=(17, 22, 34), outline=(40, 53, 78), width=2)
+    draw.rounded_rectangle((x1, y1, x2, y1 + 58), radius=30, fill=(22, 29, 44))
+    draw.rectangle((x1, y1 + 30, x2, y1 + 58), fill=(22, 29, 44))
+    for index, color in enumerate(((255, 95, 86), (255, 189, 46), (39, 201, 63))):
+        draw.ellipse((x1 + 26 + index * 28, y1 + 22, x1 + 42 + index * 28, y1 + 38), fill=color)
+    address = str(url or "marketplace").replace("https://", "").replace("http://", "")
+    address = address[:86]
+    draw.rounded_rectangle((x1 + 132, y1 + 14, x2 - 26, y1 + 46), radius=16, fill=(10, 14, 22), outline=(45, 58, 82))
+    draw.text((x1 + 150, y1 + 21), address, fill=(178, 188, 206), font=_font(18))
+
+
+async def _load_product_screenshot(product: dict, output_name: str | None) -> Image.Image | None:
+    settings = get_settings()
+    url = product.get("url")
+    if not url:
+        return None
+    token = _safe_file_token(str(product.get("source_id") or product.get("id") or url))
+    screenshot_name = f"screenshot_{token}.png" if not output_name else f"{Path(output_name).stem}_page.png"
+    screenshot_path = settings.generated_dir / "screenshots" / screenshot_name
+    saved = await capture_product_screenshot(url, screenshot_path)
+    if not saved:
+        return None
+    try:
+        return Image.open(saved).convert("RGBA")
+    except Exception as exc:
+        logger.warning("Screenshot open failed for %s: %s", saved, exc)
+        return None
+
+
 async def render_poster(
     product: dict,
     project: dict | None = None,
@@ -278,8 +316,8 @@ async def render_poster(
     variant: int = 0,
 ) -> str:
     settings = get_settings()
-    canvas = Image.new("RGBA", (1400, 1400), BG)
-    _draw_vertical_gradient(canvas, (9, 13, 22), (17, 23, 36))
+    canvas = Image.new("RGBA", (1400, 920), BG)
+    _draw_vertical_gradient(canvas, (8, 12, 20), (17, 23, 36))
     draw = ImageDraw.Draw(canvas)
 
     accent = DEFAULT_ACCENT if variant % 2 == 0 else DEFAULT_SECONDARY
@@ -301,93 +339,38 @@ async def render_poster(
     accent_soft = _blend(accent, (255, 255, 255), 0.22)
     accent_dark = _blend(accent, (0, 0, 0), 0.42)
 
-    # Outer frame
-    draw.rounded_rectangle((44, 44, 1356, 1356), radius=40, fill=(16, 22, 34), outline=(36, 47, 70), width=2)
-    draw.rounded_rectangle((64, 64, 1336, 1336), radius=32, outline=(50, 64, 92), width=1)
+    # Screenshot is the source of truth: no AI redraw, no invented product.
+    screenshot = await _load_product_screenshot(product, output_name)
+    if screenshot is None:
+        screenshot = await _load_image((product.get("images") or [None])[0])
 
-    # Product image is the source of truth. AI generation is only a fallback when the feed has no image.
-    source_image = await _load_image((product.get("images") or [None])[0])
-    if source_image is None:
-        source_image = await _generate_codex_sale_reference_image(product, project)
-
-    image_area = (662, 164, 1286, 1128)
-    shadow = Image.new("RGBA", (image_area[2] - image_area[0] + 44, image_area[3] - image_area[1] + 44), (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow)
-    shadow_draw.rounded_rectangle((22, 22, shadow.width - 22, shadow.height - 22), radius=42, fill=(0, 0, 0, 130))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(18))
-    canvas.paste(shadow, (image_area[0] - 22, image_area[1] - 12), shadow)
-
-    draw.rounded_rectangle(image_area, radius=38, fill=(8, 11, 18), outline=(34, 44, 64), width=2)
-    if source_image:
-        bg = _cover_image(source_image, (image_area[2] - image_area[0], image_area[3] - image_area[1])).filter(ImageFilter.GaussianBlur(24))
-        overlay = Image.new("RGBA", bg.size, (7, 10, 16, 150))
-        bg.alpha_composite(overlay)
-        _rounded_paste(canvas, bg, image_area, 38)
-
-        fitted = _fit_image(source_image, (560, 760))
-        x = image_area[0] + (image_area[2] - image_area[0] - fitted.width) // 2
-        y = image_area[1] + (image_area[3] - image_area[1] - fitted.height) // 2
-        canvas.paste(fitted, (x, y), fitted)
+    frame = (42, 42, 1358, 792)
+    _draw_browser_chrome(draw, frame, product.get("url"))
+    content_box = (64, 106, 1336, 770)
+    if screenshot:
+        shot = _cover_image(screenshot, (content_box[2] - content_box[0], content_box[3] - content_box[1]))
+        _rounded_paste(canvas, shot, content_box, 18)
     else:
-        placeholder = Image.new("RGBA", (image_area[2] - image_area[0], image_area[3] - image_area[1]), (18, 24, 38))
-        ph_draw = ImageDraw.Draw(placeholder)
-        ph_draw.rounded_rectangle((52, 352, placeholder.width - 52, 510), radius=28, fill=(25, 33, 50), outline=(44, 56, 82))
-        ph_draw.text((142, 402), "Фото товара", fill=MUTED, font=_font(48, True))
-        _rounded_paste(canvas, placeholder, image_area, 38)
+        draw.rounded_rectangle(content_box, radius=18, fill=(18, 24, 38), outline=(44, 56, 82))
+        draw.text((562, 405), "Скриншот товара недоступен", fill=MUTED, font=_font(34, True))
 
-    # Header badge
-    badge_box = (88, 88, 540, 164)
-    draw.rounded_rectangle(badge_box, radius=24, fill=accent)
-    logo_font = _font(34 if len(logo_text) <= 18 else 28, True)
-    draw.text((114, 111), logo_text[:28], fill=INK, font=logo_font)
-    draw.text((88, 190), project_name, fill=accent_soft, font=_font(30, True))
+    footer = (42, 806, 1358, 884)
+    draw.rounded_rectangle(footer, radius=24, fill=(11, 16, 26), outline=accent_dark, width=2)
+    draw.rounded_rectangle((66, 826, 174, 864), radius=14, fill=accent)
+    logo_font = _font(22 if len(logo_text) <= 18 else 18, True)
+    draw.text((84, 834), logo_text[:14], fill=INK, font=logo_font)
 
-    title = str(product.get("title") or "Товар дня").strip()
-    y = _draw_wrapped(draw, title, (88, 238), 520, _font(58, True), TEXT, max_lines=4, line_gap=10)
+    title = _ellipsize(draw, str(product.get("title") or "Товар дня"), _font(30, True), 760)
+    draw.text((196, 818), title, fill=TEXT, font=_font(30, True))
+    draw.text((196, 854), _ellipsize(draw, tagline, _font(20), 720), fill=accent_soft, font=_font(20))
 
-    brand = product.get("brand")
-    if brand:
-        y += 14
-        draw.text((88, y), str(brand)[:42], fill=MUTED, font=_font(30))
-
-    price = product.get("price", 0)
-    market_price = product.get("market_price")
-    discount = product.get("discount_percent")
-
-    price_card = (88, 646, 606, 822)
-    draw.rounded_rectangle(price_card, radius=32, fill=(246, 248, 252))
-    draw.text((124, 676), "Цена сейчас", fill=(68, 76, 90), font=_font(26, True))
-    draw.text((122, 712), _format_price(price), fill=INK, font=_font(68, True))
-    if market_price:
-        draw.text((124, 786), f"обычно {_format_price(market_price)}", fill=(97, 105, 118), font=_font(26))
-    if discount:
-        discount_box = (430, 672, 574, 732)
-        draw.rounded_rectangle(discount_box, radius=20, fill=accent)
-        draw.text((462, 686), f"-{int(discount)}%", fill=INK, font=_font(30, True))
-
-    rating = product.get("rating")
-    reviews = product.get("reviews_count")
-    tags: list[str] = []
-    if rating:
-        tags.append(f"Рейтинг {float(rating):.1f}")
-    if reviews:
-        tags.append(f"{_format_int(reviews)} отзывов")
-    if product.get("stock_count"):
-        tags.append("В наличии")
-    chip_y = 860
-    chip_x = 88
-    for tag in tags[:3]:
-        width = max(188, draw.textbbox((0, 0), tag, font=_font(30, True))[2] + 52)
-        _draw_chip(draw, (chip_x, chip_y, min(chip_x + width, 606), chip_y + 70), tag, (25, 33, 50), outline=(42, 54, 78))
-        chip_y += 86
-
-    cta_box = (88, 1154, 1286, 1278)
-    draw.rounded_rectangle(cta_box, radius=34, fill=(11, 16, 26), outline=accent_dark, width=2)
-    draw.text((122, 1186), _ellipsize(draw, tagline, _font(36, True), 860), fill=TEXT, font=_font(36, True))
-    draw.text((122, 1234), "Ссылка и детали — в кнопке под постом", fill=MUTED, font=_font(26))
+    price_text = _format_price(product.get("price"))
+    price_bbox = draw.textbbox((0, 0), price_text, font=_font(42, True))
+    price_x = 1312 - (price_bbox[2] - price_bbox[0])
+    draw.text((price_x, 818), price_text, fill=accent, font=_font(42, True))
     hash_text = f"#{project_slug}"
-    hash_bbox = draw.textbbox((0, 0), hash_text, font=_font(30, True))
-    draw.text((1260 - (hash_bbox[2] - hash_bbox[0]), 1230), hash_text, fill=accent, font=_font(30, True))
+    hash_bbox = draw.textbbox((0, 0), hash_text, font=_font(20, True))
+    draw.text((1312 - (hash_bbox[2] - hash_bbox[0]), 862), hash_text, fill=MUTED, font=_font(20, True))
 
     result_name = output_name or f"poster_{variant}.png"
     output_path = settings.generated_dir / result_name

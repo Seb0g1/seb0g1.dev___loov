@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.services.marketplace_links import format_price_from
 from app.services.runtime_config import load_runtime_config
 
 logger = logging.getLogger(__name__)
@@ -53,11 +54,12 @@ def build_prompt(product: dict, style: str, project: dict | None = None) -> str:
     return (
         f"{project_text}"
         "Ты пишешь пост для Telegram-канала. Не выдумывай характеристики. "
-        "Используй только данные из JSON. Если характеристика неизвестна, не упоминай её.\n"
+        "Используй только данные из JSON. Если характеристика неизвестна, не упоминай её. "
+        "Цену пиши строго в формате «от: 1 990р.», без копеек и без слова рублей.\n"
         f"Стиль: {guide}\n"
         f"Данные товара:\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "Формат: заголовок, 2-4 абзаца, затем мягкий CTA. "
-        "Добавь цену и кратко объясни выгоду покупки."
+        "Добавь актуальную цену и кратко объясни выгоду покупки."
     )
 
 
@@ -71,9 +73,9 @@ def fallback_text(product: dict, style: str, project: dict | None = None) -> str
     lead = project.get("name") if project else "Товар дня"
     lines = [f"{lead}: {title}"]
     if discount and market_price:
-        lines.append(f"Сейчас стоит {price:,.0f} ₽ вместо {market_price:,.0f} ₽".replace(",", " "))
+        lines.append(f"Сейчас {format_price_from(price)} вместо {market_price:,.0f}р.".replace(",", " "))
     else:
-        lines.append(f"Цена: {price:,.0f} ₽".replace(",", " "))
+        lines.append(f"Цена {format_price_from(price)}")
     extras = []
     if rating:
         extras.append(f"рейтинг {rating:.1f}")
