@@ -7,6 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    fonts-dejavu-core \
+    fonts-liberation \
     libjpeg62-turbo \
     zlib1g \
     && rm -rf /var/lib/apt/lists/*

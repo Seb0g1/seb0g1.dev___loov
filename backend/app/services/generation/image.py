@@ -20,21 +20,34 @@ DEFAULT_SECONDARY = (77, 124, 255)
 TEXT = (245, 247, 250)
 MUTED = (170, 177, 191)
 BG = (12, 16, 26)
-PANEL = (20, 26, 40)
+INK = (9, 12, 18)
+
+FONT_CACHE: dict[tuple[int, bool], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    cache_key = (size, bold)
+    if cache_key in FONT_CACHE:
+        return FONT_CACHE[cache_key]
+
     candidates = [
-        Path("C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
         Path("C:/Windows/Fonts/segoeuib.ttf" if bold else "C:/Windows/Fonts/segoeui.ttf"),
+        Path("C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf"),
     ]
     for path in candidates:
         if path.exists():
             try:
-                return ImageFont.truetype(str(path), size=size)
+                font = ImageFont.truetype(str(path), size=size)
+                FONT_CACHE[cache_key] = font
+                return font
             except Exception:
                 continue
-    return ImageFont.load_default()
+    font = ImageFont.load_default()
+    FONT_CACHE[cache_key] = font
+    return font
 
 
 def _hex_to_rgb(value: str | None, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -50,13 +63,16 @@ async def _load_image(url: str | None) -> Image.Image | None:
     if not url:
         return None
     try:
-        if Path(url).exists():
-            return Image.open(url).convert("RGBA")
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            image = Image.open(io.BytesIO(response.content)).convert("RGBA")
-            return image
+        normalized_url = str(url).strip()
+        if normalized_url.startswith(("http://", "https://")):
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+                response = await client.get(normalized_url)
+                response.raise_for_status()
+                image = Image.open(io.BytesIO(response.content)).convert("RGBA")
+                return image
+
+        if Path(normalized_url).exists():
+            return Image.open(normalized_url).convert("RGBA")
     except Exception as exc:
         logger.warning("Image download failed for %s: %s", url, exc)
         return None
@@ -150,6 +166,48 @@ def _fit_image(image: Image.Image, target: tuple[int, int]) -> Image.Image:
     return canvas
 
 
+def _cover_image(image: Image.Image, target: tuple[int, int]) -> Image.Image:
+    copy = image.copy().convert("RGBA")
+    scale = max(target[0] / copy.width, target[1] / copy.height)
+    resized = copy.resize((max(1, int(copy.width * scale)), max(1, int(copy.height * scale))), Image.Resampling.LANCZOS)
+    x = (resized.width - target[0]) // 2
+    y = (resized.height - target[1]) // 2
+    return resized.crop((x, y, x + target[0], y + target[1]))
+
+
+def _rounded_paste(canvas: Image.Image, image: Image.Image, box: tuple[int, int, int, int], radius: int) -> None:
+    width = box[2] - box[0]
+    height = box[3] - box[1]
+    image = image.resize((width, height), Image.Resampling.LANCZOS).convert("RGBA")
+    mask = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, width, height), radius=radius, fill=255)
+    canvas.paste(image, (box[0], box[1]), mask)
+
+
+def _format_price(value: float | int | None) -> str:
+    amount = float(value or 0)
+    return f"{amount:,.0f} ₽".replace(",", " ")
+
+
+def _format_int(value: float | int | None) -> str:
+    amount = int(float(value or 0))
+    return f"{amount:,}".replace(",", " ")
+
+
+def _blend(first: tuple[int, int, int], second: tuple[int, int, int], ratio: float) -> tuple[int, int, int]:
+    return tuple(int(first[index] * (1 - ratio) + second[index] * ratio) for index in range(3))
+
+
+def _draw_vertical_gradient(canvas: Image.Image, top: tuple[int, int, int], bottom: tuple[int, int, int]) -> None:
+    pixels = canvas.load()
+    height = canvas.height
+    for y in range(height):
+        ratio = y / max(height - 1, 1)
+        color = _blend(top, bottom, ratio)
+        for x in range(canvas.width):
+            pixels[x, y] = (*color, 255)
+
+
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
     words = text.split()
     lines: list[str] = []
@@ -168,6 +226,51 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_w
     return lines
 
 
+def _draw_wrapped(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    xy: tuple[int, int],
+    max_width: int,
+    font: ImageFont.ImageFont,
+    fill: tuple[int, int, int],
+    max_lines: int = 3,
+    line_gap: int = 8,
+) -> int:
+    lines = _wrap(draw, text, font, max_width)
+    y = xy[1]
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        tail = lines[-1]
+        while tail and draw.textbbox((0, 0), f"{tail}...", font=font)[2] > max_width:
+            tail = tail[:-1].rstrip()
+        lines[-1] = f"{tail}..." if tail else lines[-1]
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        draw.text((xy[0], y), line, fill=fill, font=font)
+        y += bbox[3] - bbox[1] + line_gap
+    return y
+
+
+def _ellipsize(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> str:
+    text = text.strip()
+    if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+        return text
+    while text and draw.textbbox((0, 0), f"{text}...", font=font)[2] > max_width:
+        text = text[:-1].rstrip()
+    return f"{text}..." if text else ""
+
+
+def _draw_chip(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text: str, fill: tuple[int, int, int], outline: tuple[int, int, int] | None = None) -> None:
+    draw.rounded_rectangle(box, radius=24, fill=fill, outline=outline)
+    bbox = draw.textbbox((0, 0), text, font=_font(30, True))
+    draw.text(
+        (box[0] + (box[2] - box[0] - (bbox[2] - bbox[0])) // 2, box[1] + (box[3] - box[1] - (bbox[3] - bbox[1])) // 2 - 2),
+        text,
+        fill=TEXT,
+        font=_font(30, True),
+    )
+
+
 async def render_poster(
     product: dict,
     project: dict | None = None,
@@ -176,80 +279,118 @@ async def render_poster(
 ) -> str:
     settings = get_settings()
     canvas = Image.new("RGBA", (1400, 1400), BG)
+    _draw_vertical_gradient(canvas, (9, 13, 22), (17, 23, 36))
     draw = ImageDraw.Draw(canvas)
-    draw.rounded_rectangle((48, 48, 1352, 1352), radius=36, fill=PANEL)
-    draw.rounded_rectangle((60, 60, 1340, 1340), radius=30, outline=(32, 40, 60), width=2)
 
     accent = DEFAULT_ACCENT if variant % 2 == 0 else DEFAULT_SECONDARY
     logo_text = "Техно Халява"
     tagline = "Товар отобран по выгоде и актуальности"
     project_slug = "tehno_halyava"
+    project_name = "Техно Халява"
 
     if project:
         accent = _hex_to_rgb(project.get("accent_color"), accent)
         secondary = _hex_to_rgb(project.get("accent_secondary"), DEFAULT_SECONDARY)
         if variant % 2 == 1:
             accent = secondary
-        logo_text = project.get("logo_text") or project.get("name") or logo_text
+        project_name = project.get("name") or project_name
+        logo_text = project.get("logo_text") or project_name
         tagline = project.get("tagline") or tagline
         project_slug = (project.get("slug") or project_slug).replace("-", "")
 
-    draw.rounded_rectangle((76, 76, 330, 170), radius=24, fill=accent)
-    draw.text((106, 108), logo_text, fill=(10, 12, 18), font=_font(40, True))
+    accent_soft = _blend(accent, (255, 255, 255), 0.22)
+    accent_dark = _blend(accent, (0, 0, 0), 0.42)
 
-    title = product.get("title", "Товар дня")
-    lines = _wrap(draw, title, _font(56, True), 640)
-    y = 260
-    for line in lines[:4]:
-        draw.text((88, y), line, fill=TEXT, font=_font(56, True))
-        y += 68
+    # Outer frame
+    draw.rounded_rectangle((44, 44, 1356, 1356), radius=40, fill=(16, 22, 34), outline=(36, 47, 70), width=2)
+    draw.rounded_rectangle((64, 64, 1336, 1336), radius=32, outline=(50, 64, 92), width=1)
+
+    # Product image is the source of truth. AI generation is only a fallback when the feed has no image.
+    source_image = await _load_image((product.get("images") or [None])[0])
+    if source_image is None:
+        source_image = await _generate_codex_sale_reference_image(product, project)
+
+    image_area = (662, 164, 1286, 1128)
+    shadow = Image.new("RGBA", (image_area[2] - image_area[0] + 44, image_area[3] - image_area[1] + 44), (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.rounded_rectangle((22, 22, shadow.width - 22, shadow.height - 22), radius=42, fill=(0, 0, 0, 130))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(18))
+    canvas.paste(shadow, (image_area[0] - 22, image_area[1] - 12), shadow)
+
+    draw.rounded_rectangle(image_area, radius=38, fill=(8, 11, 18), outline=(34, 44, 64), width=2)
+    if source_image:
+        bg = _cover_image(source_image, (image_area[2] - image_area[0], image_area[3] - image_area[1])).filter(ImageFilter.GaussianBlur(24))
+        overlay = Image.new("RGBA", bg.size, (7, 10, 16, 150))
+        bg.alpha_composite(overlay)
+        _rounded_paste(canvas, bg, image_area, 38)
+
+        fitted = _fit_image(source_image, (560, 760))
+        x = image_area[0] + (image_area[2] - image_area[0] - fitted.width) // 2
+        y = image_area[1] + (image_area[3] - image_area[1] - fitted.height) // 2
+        canvas.paste(fitted, (x, y), fitted)
+    else:
+        placeholder = Image.new("RGBA", (image_area[2] - image_area[0], image_area[3] - image_area[1]), (18, 24, 38))
+        ph_draw = ImageDraw.Draw(placeholder)
+        ph_draw.rounded_rectangle((52, 352, placeholder.width - 52, 510), radius=28, fill=(25, 33, 50), outline=(44, 56, 82))
+        ph_draw.text((142, 402), "Фото товара", fill=MUTED, font=_font(48, True))
+        _rounded_paste(canvas, placeholder, image_area, 38)
+
+    # Header badge
+    badge_box = (88, 88, 540, 164)
+    draw.rounded_rectangle(badge_box, radius=24, fill=accent)
+    logo_font = _font(34 if len(logo_text) <= 18 else 28, True)
+    draw.text((114, 111), logo_text[:28], fill=INK, font=logo_font)
+    draw.text((88, 190), project_name, fill=accent_soft, font=_font(30, True))
+
+    title = str(product.get("title") or "Товар дня").strip()
+    y = _draw_wrapped(draw, title, (88, 238), 520, _font(58, True), TEXT, max_lines=4, line_gap=10)
+
+    brand = product.get("brand")
+    if brand:
+        y += 14
+        draw.text((88, y), str(brand)[:42], fill=MUTED, font=_font(30))
 
     price = product.get("price", 0)
     market_price = product.get("market_price")
     discount = product.get("discount_percent")
-    price_text = f"{price:,.0f} ₽".replace(",", " ")
-    draw.rounded_rectangle((88, 590, 510, 720), radius=28, fill=(255, 255, 255))
-    draw.text((120, 618), price_text, fill=(10, 12, 18), font=_font(58, True))
+
+    price_card = (88, 646, 606, 822)
+    draw.rounded_rectangle(price_card, radius=32, fill=(246, 248, 252))
+    draw.text((124, 676), "Цена сейчас", fill=(68, 76, 90), font=_font(26, True))
+    draw.text((122, 712), _format_price(price), fill=INK, font=_font(68, True))
     if market_price:
-        draw.text((88, 745), f"Было {market_price:,.0f} ₽".replace(",", " "), fill=MUTED, font=_font(30))
+        draw.text((124, 786), f"обычно {_format_price(market_price)}", fill=(97, 105, 118), font=_font(26))
     if discount:
-        draw.rounded_rectangle((520, 590, 690, 670), radius=22, fill=accent)
-        draw.text((556, 613), f"-{int(discount)}%", fill=(10, 12, 18), font=_font(34, True))
+        discount_box = (430, 672, 574, 732)
+        draw.rounded_rectangle(discount_box, radius=20, fill=accent)
+        draw.text((462, 686), f"-{int(discount)}%", fill=INK, font=_font(30, True))
 
     rating = product.get("rating")
     reviews = product.get("reviews_count")
-    tags = []
+    tags: list[str] = []
     if rating:
-        tags.append(f"Рейтинг {rating:.1f}")
+        tags.append(f"Рейтинг {float(rating):.1f}")
     if reviews:
-        tags.append(f"{reviews} отзывов")
+        tags.append(f"{_format_int(reviews)} отзывов")
     if product.get("stock_count"):
         tags.append("В наличии")
-    tag_y = 810
-    for idx, tag in enumerate(tags[:3]):
-        box = (88 + idx * 250, tag_y, 318 + idx * 250, tag_y + 74)
-        draw.rounded_rectangle(box, radius=20, fill=(24, 31, 46))
-        draw.text((box[0] + 24, box[1] + 22), tag, fill=TEXT, font=_font(28))
+    chip_y = 860
+    chip_x = 88
+    for tag in tags[:3]:
+        width = max(188, draw.textbbox((0, 0), tag, font=_font(30, True))[2] + 52)
+        _draw_chip(draw, (chip_x, chip_y, min(chip_x + width, 606), chip_y + 70), tag, (25, 33, 50), outline=(42, 54, 78))
+        chip_y += 86
 
-    source_image = await _generate_codex_sale_reference_image(product, project)
-    if source_image is None:
-        source_image = await _load_image((product.get("images") or [None])[0])
-    image_area = (760, 190, 1288, 1180)
-    draw.rounded_rectangle(image_area, radius=32, fill=(15, 19, 30))
-    if source_image:
-        fitted = _fit_image(source_image, (480, 920))
-        canvas.paste(fitted, (800, 220), fitted)
-    else:
-        placeholder = Image.new("RGBA", (480, 920), (32, 40, 60))
-        ph_draw = ImageDraw.Draw(placeholder)
-        ph_draw.text((130, 430), "PHOTO", fill=MUTED, font=_font(48, True))
-        canvas.paste(placeholder, (800, 220), placeholder)
-
-    draw.text((88, 1280), tagline, fill=MUTED, font=_font(28))
-    draw.text((1100, 1280), f"#{project_slug}", fill=accent, font=_font(28, True))
+    cta_box = (88, 1154, 1286, 1278)
+    draw.rounded_rectangle(cta_box, radius=34, fill=(11, 16, 26), outline=accent_dark, width=2)
+    draw.text((122, 1186), _ellipsize(draw, tagline, _font(36, True), 860), fill=TEXT, font=_font(36, True))
+    draw.text((122, 1234), "Ссылка и детали — в кнопке под постом", fill=MUTED, font=_font(26))
+    hash_text = f"#{project_slug}"
+    hash_bbox = draw.textbbox((0, 0), hash_text, font=_font(30, True))
+    draw.text((1260 - (hash_bbox[2] - hash_bbox[0]), 1230), hash_text, fill=accent, font=_font(30, True))
 
     result_name = output_name or f"poster_{variant}.png"
     output_path = settings.generated_dir / result_name
-    canvas = canvas.filter(ImageFilter.SHARPEN)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path)
     return str(output_path)
