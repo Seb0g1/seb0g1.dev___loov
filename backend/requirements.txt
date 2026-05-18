@@ -11,3 +11,4 @@ python-multipart==0.0.20
 aiogram==3.17.0
 telethon==1.38.1
 playwright==1.52.0
+lxml==5.3.1
