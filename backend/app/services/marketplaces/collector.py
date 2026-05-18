@@ -87,7 +87,11 @@ def _build_marketplace_search_url(marketplace: Any, category: Any = "") -> str:
     if normalized_marketplace == "ozon":
         return f"https://www.ozon.ru/search/?text={quote_plus(query)}" if query else "https://www.ozon.ru/"
     if normalized_marketplace == "wildberries":
-        return f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote_plus(query)}" if query else "https://www.wildberries.ru/"
+        return (
+            "https://search.wb.ru/exactmatch/ru/common/v18/search"
+            f"?appType=1&curr=rub&dest=-1257786&page=1&query={quote_plus(query)}"
+            "&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false"
+        ) if query else "https://www.wildberries.ru/"
     if normalized_marketplace == "yandex_market":
         return f"https://market.yandex.ru/search?text={quote_plus(query)}" if query else "https://market.yandex.ru/"
     return ""

@@ -400,7 +400,9 @@ function buildMarketplaceSearchUrl(marketplace: FeedEditorRow['marketplace'], ca
     return query ? `https://www.ozon.ru/search/?text=${encodeURIComponent(query)}` : 'https://www.ozon.ru/'
   }
   if (marketplace === 'wildberries') {
-    return query ? `https://www.wildberries.ru/catalog/0/search.aspx?search=${encodeURIComponent(query)}` : 'https://www.wildberries.ru/'
+    return query
+      ? `https://search.wb.ru/exactmatch/ru/common/v18/search?appType=1&curr=rub&dest=-1257786&page=1&query=${encodeURIComponent(query)}&resultset=catalog&sort=popular&spp=30&suppressSpellcheck=false`
+      : 'https://www.wildberries.ru/'
   }
   if (marketplace === 'yandex_market') {
     return query ? `https://market.yandex.ru/search?text=${encodeURIComponent(query)}` : 'https://market.yandex.ru/'
