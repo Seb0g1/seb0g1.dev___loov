@@ -187,7 +187,7 @@ const settings = ref<SettingRow[]>([])
 const referrals = ref<ReferralRow[]>([])
 const adPackages = ref<AdPackage[]>([])
 const adRequests = ref<AdRequest[]>([])
-const activeTab = ref<'dashboard' | 'products' | 'drafts' | 'feeds' | 'diagnostics' | 'ads' | 'logs' | 'settings'>('dashboard')
+const activeTab = ref<'dashboard' | 'products' | 'drafts' | 'channels' | 'feeds' | 'diagnostics' | 'ads' | 'logs' | 'settings'>('dashboard')
 const notice = ref('')
 const selectedStyle = ref('short')
 const search = ref('')
@@ -311,6 +311,8 @@ const parserState = computed(() => {
     configured: Boolean(ozon || wb || ym || projectFeedCount),
   }
 })
+
+const configuredChannelsCount = computed(() => projects.value.filter((project) => Boolean(project.telegram_channel_id)).length)
 
 const syncStatusByProject = computed(() => {
   const grouped: Record<number, SyncRow[]> = {}
@@ -1098,6 +1100,7 @@ onMounted(reloadAll)
         <button :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'"><BarChart3 />Дашборд</button>
         <button :class="{ active: activeTab === 'products' }" @click="activeTab = 'products'"><Boxes />Товары</button>
         <button :class="{ active: activeTab === 'drafts' }" @click="activeTab = 'drafts'"><FileText />Черновики</button>
+        <button :class="{ active: activeTab === 'channels' }" @click="activeTab = 'channels'"><Megaphone />Каналы</button>
         <button :class="{ active: activeTab === 'feeds' }" @click="activeTab = 'feeds'"><Sparkles />Фиды</button>
         <button :class="{ active: activeTab === 'diagnostics' }" @click="activeTab = 'diagnostics'"><Activity />Диагностика</button>
         <button :class="{ active: activeTab === 'ads' }" @click="activeTab = 'ads'"><Megaphone />Реклама</button>
@@ -1396,6 +1399,87 @@ onMounted(reloadAll)
         </div>
       </section>
 
+      <section v-if="activeTab === 'channels'" class="split-layout">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Каналы проектов</h2>
+            <span>{{ projects.length }} канала</span>
+          </div>
+          <div class="list">
+            <div v-for="project in projects" :key="project.id" class="settings-card channel-card">
+              <div class="settings-card-head">
+                <div>
+                  <strong>{{ project.name }}</strong>
+                  <span>{{ project.telegram_channel_id || 'канал не задан' }}</span>
+                </div>
+                <label class="inline-check">
+                  <input v-model="channelEditors[project.id].is_active" type="checkbox" />
+                  <span>Активен</span>
+                </label>
+              </div>
+              <div class="form-grid">
+                <label><span>Ссылка канала</span><input v-model="channelEditors[project.id].telegram_channel_url" placeholder="https://t.me/channel" /></label>
+                <label><span>ID / @username канала</span><input v-model="channelEditors[project.id].telegram_channel_id" placeholder="@channel или -100..." /></label>
+              </div>
+              <label class="block-field"><span>Категории проекта</span><textarea v-model="channelEditors[project.id].category_focus_json" rows="3" placeholder='["keyboards","monitors"] или keyboards, monitors'></textarea></label>
+              <div class="channel-meta">
+                <span>{{ project.niche }}</span>
+                <span>{{ projectFocusCategories(project).length }} категорий</span>
+              </div>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <button class="primary" :disabled="loadingAction" @click="saveChannels">Сохранить каналы</button>
+            <button class="ghost" :disabled="loadingAction" @click="runSettingsTest('channels')">Тест бота во всех каналах</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Telegram-контроль</h2>
+            <span>бот, админ, каналы</span>
+          </div>
+          <div class="status-stack">
+            <div class="status-item">
+              <span>Bot</span>
+              <strong>{{ settingsEditor.telegram_bot_username || 'username не задан' }}</strong>
+            </div>
+            <div class="status-item">
+              <span>Admin</span>
+              <strong>{{ settingsEditor.telegram_admin_id || 'ID не задан' }}</strong>
+            </div>
+            <div class="status-item">
+              <span>Default</span>
+              <strong>{{ settingsEditor.telegram_channel_id || 'fallback канал пустой' }}</strong>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <button class="ghost" :disabled="loadingAction" @click="runSettingsTest('token')">Тест токена бота</button>
+            <button class="ghost" :disabled="loadingAction" @click="runSettingsTest('admin')">Тест админу</button>
+            <button class="ghost" :disabled="loadingAction" @click="runDiagnostics">Проверить всё</button>
+          </div>
+          <pre v-if="settingsTestResult" class="test-output">{{ settingsTestResult }}</pre>
+          <div class="sync-panel">
+            <div class="panel-head">
+              <h2>Текущая привязка</h2>
+              <span>по проектам</span>
+            </div>
+            <div class="sync-projects">
+              <article v-for="project in projects" :key="`channel-state-${project.id}`" class="sync-project-card">
+                <div class="sync-project-head">
+                  <strong>{{ project.name }}</strong>
+                  <span>{{ project.is_active ? 'активен' : 'выключен' }}</span>
+                </div>
+                <div class="channel-state-line">
+                  <span>{{ project.telegram_channel_url || 'ссылка не задана' }}</span>
+                  <strong>{{ project.telegram_channel_id || 'ID не задан' }}</strong>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section v-if="activeTab === 'feeds'" class="split-layout">
         <div class="panel">
           <div class="panel-head">
@@ -1641,27 +1725,26 @@ onMounted(reloadAll)
 
         <div class="panel">
           <div class="panel-head">
-            <h2>Каналы проектов</h2>
-            <span>{{ projects.length }} канала</span>
+            <h2>Готовность запуска</h2>
+            <span>основные узлы</span>
           </div>
-          <div class="list">
-            <div v-for="project in projects" :key="project.id" class="settings-card">
-              <div class="settings-card-head">
-                <strong>{{ project.name }}</strong>
-                <label class="inline-check">
-                  <input v-model="channelEditors[project.id].is_active" type="checkbox" />
-                  <span>Активен</span>
-                </label>
-              </div>
-              <label><span>Ссылка канала</span><input v-model="channelEditors[project.id].telegram_channel_url" placeholder="https://t.me/channel" /></label>
-              <label><span>ID / @username канала</span><input v-model="channelEditors[project.id].telegram_channel_id" placeholder="@channel или -100..." /></label>
-              <label class="block-field"><span>Категории проекта</span><textarea v-model="channelEditors[project.id].category_focus_json" rows="3" placeholder='["keyboards","monitors"] или keyboards, monitors'></textarea></label>
-              <p class="help-text">Укажи категории через запятую или JSON-массив. Импорт оставит только товары из этих тем.</p>
+          <div class="status-stack">
+            <div class="status-item">
+              <span>Каналы</span>
+              <strong>{{ configuredChannelsCount }} / {{ projects.length }}</strong>
+            </div>
+            <div class="status-item">
+              <span>AI текст</span>
+              <strong>{{ settingsEditor.text_engine }} · {{ settingsEditor.openrouter_text_model }}</strong>
+            </div>
+            <div class="status-item">
+              <span>AI картинки</span>
+              <strong>{{ settingsEditor.image_engine }} · {{ settingsEditor.codex_sale_image_model }}</strong>
             </div>
           </div>
           <div class="toggle-row">
-            <button class="primary" :disabled="loadingAction" @click="saveChannels">Сохранить каналы</button>
-            <button class="ghost" :disabled="loadingAction" @click="runSettingsTest('channels')">Тест бота во всех каналах</button>
+            <button class="primary" :disabled="loadingAction" @click="activeTab = 'channels'">Открыть каналы</button>
+            <button class="ghost" :disabled="loadingAction" @click="activeTab = 'feeds'">Открыть фиды</button>
           </div>
           <div class="parser-state" :class="{ 'parser-state-warn': !parserState.configured }">
             <div>

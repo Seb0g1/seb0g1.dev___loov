@@ -631,6 +631,48 @@ label span {
   gap: 7px;
 }
 
+.channel-card {
+  gap: 12px;
+}
+
+.settings-card-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-card-head span,
+.channel-meta,
+.channel-state-line span {
+  color: var(--muted);
+}
+
+.channel-meta,
+.channel-state-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 4px;
+  font-size: 13px;
+}
+
+.channel-state-line {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.channel-state-line span,
+.channel-state-line strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .feed-list {
   display: grid;
   gap: 10px;
