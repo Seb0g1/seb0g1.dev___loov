@@ -38,8 +38,8 @@ if command -v docker >/dev/null 2>&1; then
   until compose exec -T db pg_isready -U tehno -d tehno_halava >/dev/null 2>&1; do
     sleep 2
   done
-  compose rm -sf backend frontend || true
-  compose up -d --build backend frontend
+  compose rm -sf backend bot frontend || true
+  compose up -d --build backend bot frontend
 else
   echo "Docker is not installed."
   exit 1

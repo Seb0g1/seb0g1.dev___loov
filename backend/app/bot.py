@@ -2,23 +2,48 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
-from app.db.session import SessionLocal
-from app.models.entities import AdPackage, AdRequest, DraftPost, Product, Project
-from app.services.advertising import ad_request_to_caption, get_active_ad_packages, notify_admin_with_media
+from app.db.base import Base
+from app.db.migrations import ensure_project_schema
+from app.db.session import SessionLocal, engine
+from app.models import entities  # noqa: F401
+from app.models.entities import AdRequest, DraftPost, Product, Project
+from app.services.advertising import get_active_ad_packages, notify_admin_with_media
 from app.services.drafts import create_draft_from_product
 from app.services.importer import import_products
 from app.services.review_actions import process_draft_decision
 from app.services.runtime_config import load_runtime_config
+from app.services.seed import seed_defaults
 
 logger = logging.getLogger(__name__)
+
+
+def _bootstrap_database() -> None:
+    last_error: Exception | None = None
+    for attempt in range(1, 31):
+        try:
+            Base.metadata.create_all(bind=engine)
+            ensure_project_schema(engine)
+            db = SessionLocal()
+            try:
+                seed_defaults(db)
+            finally:
+                db.close()
+            ensure_project_schema(engine)
+            return
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Bot database bootstrap attempt %s failed: %s", attempt, exc)
+            time.sleep(2)
+    raise RuntimeError(f"Bot database bootstrap failed: {last_error}")
 
 
 def _admin_only(settings, user_id: int | None) -> bool:
@@ -39,7 +64,11 @@ async def cmd_ad(message: Message) -> None:
         packages = get_active_ad_packages(db)
     finally:
         db.close()
-    lines = ["Пришлите текст рекламы и, если нужно, фото. После этого нажмите кнопку отправки на проверку."]
+
+    lines = [
+        "Пришлите текст рекламы и, если нужно, фото. "
+        "После этого нажмите кнопку отправки на проверку."
+    ]
     if packages:
         lines.append("Доступные пакеты:")
         for item in packages:
@@ -56,7 +85,11 @@ async def cmd_status(message: Message) -> None:
         pending = db.scalar(select(func.count()).select_from(DraftPost).where(DraftPost.status == "review")) or 0
         ads = db.scalar(select(func.count()).select_from(AdRequest)) or 0
         await message.answer(
-            f"Проекты: {projects}\nТовары: {products}\nЧерновики: {drafts}\nНа согласовании: {pending}\nРекламные заявки: {ads}"
+            f"Проекты: {projects}\n"
+            f"Товары: {products}\n"
+            f"Черновики: {drafts}\n"
+            f"На согласовании: {pending}\n"
+            f"Рекламные заявки: {ads}"
         )
     finally:
         db.close()
@@ -72,12 +105,12 @@ async def cmd_queue(message: Message) -> None:
             .limit(10)
         ).all()
         if not drafts:
-            await message.answer("Очередь на согласование пуста.")
+            await message.answer("Очередь на согласование пустая.")
             return
         lines = []
         for draft in drafts:
             project_name = draft.project.name if draft.project else "Проект"
-            lines.append(f"{draft.id}. {project_name} — {draft.title}")
+            lines.append(f"{draft.id}. {project_name} - {draft.title}")
         await message.answer("\n".join(lines))
     finally:
         db.close()
@@ -93,7 +126,7 @@ async def cmd_import(message: Message) -> None:
             result = import_products(db, project)
             imported += result["imported"]
             skipped += result["skipped"]
-        await message.answer(f"Импорт завершён: {imported} импортировано, {skipped} пропущено")
+        await message.answer(f"Импорт завершен: {imported} импортировано, {skipped} пропущено")
     except Exception as exc:
         logger.exception("Import failed: %s", exc)
         await message.answer(f"Ошибка импорта: {exc}")
@@ -119,7 +152,7 @@ async def cmd_drafts(message: Message) -> None:
 
 
 async def cmd_make_draft(message: Message) -> None:
-    parts = message.text.split()
+    parts = (message.text or "").split()
     if len(parts) < 2 or not parts[1].isdigit():
         await message.answer("Использование: /make_draft <product_id>")
         return
@@ -155,7 +188,7 @@ async def handle_ad_message(message: Message) -> None:
         media_file_id = message.photo[-1].file_id if message.photo else None
         media_local_path = None
         if media_file_id and message.bot:
-            dest_dir = Path(settings.ads_dir)
+            dest_dir = Path(get_settings().ads_dir)
             dest_dir.mkdir(parents=True, exist_ok=True)
             media_local_path = str(dest_dir / f"{message.from_user.id}_{message.message_id}.jpg")
             await message.bot.download(media_file_id, destination=media_local_path)
@@ -175,9 +208,16 @@ async def handle_ad_message(message: Message) -> None:
         db.refresh(request)
         await message.answer(
             "Заявка сохранена. Нажмите кнопку ниже, чтобы отправить текст рекламы на проверку.",
-            reply_markup={
-                "inline_keyboard": [[{"text": "Скинуть текст рекламы на проверку", "callback_data": f"ad_submit:{request.id}"}]]
-            },
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="Скинуть текст рекламы на проверку",
+                            callback_data=f"ad_submit:{request.id}",
+                        )
+                    ]
+                ]
+            ),
         )
     finally:
         db.close()
@@ -227,7 +267,7 @@ async def handle_review_action(call: CallbackQuery) -> None:
         await call.answer("Некорректная команда", show_alert=True)
         return
 
-    action = parts[1]
+    action = parts[1].lower().strip()
     draft_id = int(parts[2]) if parts[2].isdigit() else None
     if not draft_id:
         await call.answer("Черновик не найден", show_alert=True)
@@ -239,14 +279,19 @@ async def handle_review_action(call: CallbackQuery) -> None:
         if not result.get("ok"):
             await call.answer(result.get("error", "Ошибка"), show_alert=True)
             return
-        await call.answer(
-            {
-                "approve": "Пост одобрен",
-                "reject": "Пост отменён",
-                "redo": "Пост переделан",
-                "next": "Взят другой товар",
-            }.get(action, "Готово")
-        )
+
+        messages = {
+            "approve": "Пост одобрен и опубликован",
+            "reject": "Пост отменен",
+            "redo": "Пост переделан",
+            "next": "Взят другой товар",
+        }
+        if result.get("draft_id"):
+            messages[action] = f"{messages.get(action, 'Готово')}. Новый черновик #{result['draft_id']} отправлен на проверку."
+        elif result.get("message"):
+            messages[action] = f"{messages.get(action, 'Готово')}: {result['message']}"
+
+        await call.answer(messages.get(action, "Готово"), show_alert=False)
         if call.message:
             try:
                 await call.message.edit_reply_markup(reply_markup=None)
@@ -260,6 +305,7 @@ async def handle_review_action(call: CallbackQuery) -> None:
 
 
 async def run_bot() -> None:
+    _bootstrap_database()
     runtime = load_runtime_config()
     if not runtime.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
@@ -277,7 +323,9 @@ async def run_bot() -> None:
     dp.callback_query.register(handle_ad_submit, F.data.startswith("ad_submit:"))
     dp.callback_query.register(handle_review_action, F.data.startswith("review:"))
 
-    await dp.start_polling(bot)
+    logger.info("Telegram bot polling started")
+    await bot.delete_webhook(drop_pending_updates=False)
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
 if __name__ == "__main__":
